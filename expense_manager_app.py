@@ -11,6 +11,8 @@ engine = create_engine(
     connect_args={"sslmode": "require"}   # harmless even if already in URL
 )
 
+# ⬇️ Temporary check — delete after confirming
+st.write("DEBUG URL:", st.secrets["DATABASE_URL"])
 
 # ---------- Helpers ----------
 def run(query, params=None, fetch=False):
