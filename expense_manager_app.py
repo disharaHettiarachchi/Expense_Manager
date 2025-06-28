@@ -11,6 +11,14 @@ engine = create_engine(
     connect_args={"sslmode": "require"}   # harmless even if already in URL
 )
 
+# temporary
+import psycopg2, st
+try:
+    psycopg2.connect(st.secrets["DATABASE_URL"])
+    st.success("Connected OK!")
+except Exception as e:
+    st.error(e)
+    
 # ---------- Helpers ----------
 def run(query, params=None, fetch=False):
     with engine.begin() as conn:
