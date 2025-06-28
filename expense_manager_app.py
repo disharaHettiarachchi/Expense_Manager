@@ -6,7 +6,11 @@ from dateutil.relativedelta import relativedelta
 from datetime import date, datetime
 
 # ---------- DB Connection ----------
-engine = create_engine(st.secrets["connections"]["postgres"]["url"])
+engine = create_engine(
+    st.secrets["DATABASE_URL"],
+    connect_args={"sslmode": "require"}   # harmless even if already in URL
+)
+
 
 # ---------- Helpers ----------
 def run(query, params=None, fetch=False):
