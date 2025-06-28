@@ -11,20 +11,6 @@ engine = create_engine(
     connect_args={"sslmode": "require"}   # harmless even if already in URL
 )
 
-from sqlalchemy.exc import OperationalError
-import time
-
-for i in range(3):
-    try:
-        with engine.connect() as conn:
-            conn.execute(text("select 1"))
-        break                # success
-    except OperationalError as e:
-        if i == 2:
-            st.error("Database still sleeping - please try again in a minute.")
-            raise
-        time.sleep(5)        # wait then retry
-
 # ---------- Helpers ----------
 def run(query, params=None, fetch=False):
     with engine.begin() as conn:
