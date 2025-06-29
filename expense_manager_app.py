@@ -39,9 +39,16 @@ import streamlit as st
 import base64
 from pathlib import Path
 
-def add_local_bg(image_path: str):
+def add_local_bg(image_path: str, opacity: float = 0.40):
     """
-    Reads a local image file and sets it as a full-page background in Streamlit.
+    Sets a scrolling, dimmed background image for the entire Streamlit app.
+    
+    Parameters
+    ----------
+    image_path : str
+        Path to a local JPG/PNG in your repo (e.g. 'assets/wedding_bg.jpg').
+    opacity : float
+        0 = invisible overlay (no dimming), 1 = fully opaque overlay.
     """
     img_bytes = Path(image_path).read_bytes()
     encoded   = base64.b64encode(img_bytes).decode()
@@ -49,21 +56,31 @@ def add_local_bg(image_path: str):
     st.markdown(
         f"""
         <style>
+        /* Main background */
         .stApp {{
-            background: url("data:image/jpg;base64,{encoded}") center/cover no-repeat fixed;
+            background: url("data:image/jpg;base64,{encoded}") center/cover no-repeat scroll;
         }}
-        /* optional translucent sidebar */
+        /* Dim-the-photo overlay */
+        .stApp::before {{
+            content: "";
+            position: fixed;               /* cover entire viewport */
+            inset: 0;
+            background: rgba(255,255,255,{opacity});  /* white veil; change to 0,0,0 for dark */
+            pointer-events: none;          /* let clicks pass through */
+        }}
+        /* Optional: a gently frosted sidebar */
         div[data-testid="stSidebar"] > div:first-child {{
             background: rgba(255,255,255,0.85);
             border-radius: 12px;
         }}
         </style>
         """,
-        unsafe_allow_html=True,
+        unsafe_allow_html=True
     )
 
-# call this once near the top of expense_tracker_app.py
-add_local_bg("assets/wedding_bg.jpg")
+# ---------- call once near the top ----------
+add_local_bg("assets/wedding_bg.jpg", opacity=0.35)
+
 
 # Date Countdown
 today        = date.today()
