@@ -2,231 +2,197 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from sqlalchemy import create_engine, text
-from dateutil.relativedelta import relativedelta
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
+from pathlib import Path
+import base64
 
-# ---------- DB Connection ----------
+# ──────────────────  DB CONNECTION  ──────────────────
 engine = create_engine(
     st.secrets["DATABASE_URL"],
-    connect_args={"sslmode": "require"}   # harmless even if already in URL
+    connect_args={"sslmode": "require"}
 )
 
-import psycopg2
-import streamlit as st
+# quick connectivity check (remove if you like)
+import psycopg2, warnings
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore")
+    try:
+        psycopg2.connect(st.secrets["DATABASE_URL"])
+        st.success("Wedding of Himashi & Dishara!")
+    except Exception as e:
+        st.error(e)
 
-try:
-    psycopg2.connect(st.secrets["DATABASE_URL"])
-    st.success("Wedding of Himashi & Dishara!")
-except Exception as e:
-    st.error(e)
-
-    
-# ---------- Helpers ----------
+# ──────────────────  HELPERS  ──────────────────
 def run(query, params=None, fetch=False):
     with engine.begin() as conn:
         res = conn.execute(text(query), params or {})
         return res.fetchall() if fetch else None
 
-def load_table(table):
-    return pd.read_sql(f"select * from {table}", engine)
+def load_table(tbl):
+    return pd.read_sql(f"select * from {tbl}", engine)
 
-# ---------- UI ----------
-st.set_page_config(page_title="Wedding Expense Tracker", layout="centered")
+def datetime_input(label, default_date):
+    """Returns a combined datetime from two widgets."""
+    c1, c2 = st.columns([2, 1])
+    d_val = c1.date_input(f"{label} – date", value=default_date, key=f"d_{label}")
+    t_val = c2.time_input(f"{label} – time", value=datetime.now().time(), key=f"t_{label}")
+    return datetime.combine(d_val, t_val)
+
+def add_scrolling_bg(image_path, veil_opacity=.35, veil_rgb=(255,255,255)):
+    img_b64 = base64.b64encode(Path(image_path).read_bytes()).decode()
+    r,g,b   = veil_rgb
+    veil    = f"rgba({r},{g},{b},{veil_opacity})"
+    st.markdown(f"""
+        <style>
+        .stApp {{
+           background:
+             linear-gradient({veil},{veil}),
+             url("data:image/jpg;base64,{img_b64}") center/cover no-repeat scroll;
+        }}
+        div[data-testid="stSidebar"] > div:first-child {{
+           background: rgba(255,255,255,0.85); border-radius:12px;
+        }}
+        </style>""", unsafe_allow_html=True)
+
+# ──────────────────  PAGE CONFIG  ──────────────────
+st.set_page_config("Wedding Expense Tracker", layout="centered")
+add_scrolling_bg("assets/wedding_bg.jpg", veil_opacity=.05)
+
 st.title("💍 Wedding Expense & Income Tracker")
 
-#Background
-import streamlit as st
-import base64
-from pathlib import Path
+# countdown
+today, wedding_day = date.today(), date(2025,8,23)
+st.metric("⏳ Days until wedding", f"{max((wedding_day-today).days-1,0)} days")
 
-def add_scrolling_bg(image_path: str,
-                     veil_opacity: float = 0.35,
-                     veil_rgb: tuple[int, int, int] = (255, 255, 255)):
-    """
-    Adds a scrolling background image with a built-in translucent veil.
-    
-    Parameters
-    ----------
-    image_path   : str   Path to local JPG/PNG inside the repo, e.g. 'assets/wedding_bg.jpg'.
-    veil_opacity : float 0 (transparent) … 1 (solid).  0.35-0.45 keeps text readable.
-    veil_rgb     : tuple Veil colour as (R, G, B).  Use (0,0,0) for a dark tint.
-    """
-    # base-64-encode the local file
-    img_data = Path(image_path).read_bytes()
-    img_b64  = base64.b64encode(img_data).decode()
-
-    r, g, b  = veil_rgb
-    veil_rgba = f"rgba({r},{g},{b},{veil_opacity})"
-
-    st.markdown(
-        f"""
-        <style>
-        /* Root element for every page in Streamlit */
-        .stApp {{
-            /* ① dimming veil, ② actual photo */
-            background:
-                linear-gradient({veil_rgba}, {veil_rgba}),
-                url("data:image/jpg;base64,{img_b64}") center/cover no-repeat scroll;
-        }}
-        /* Optional glassy sidebar */
-        div[data-testid="stSidebar"] > div:first-child {{
-            background: rgba(255,255,255,0.85);
-            border-radius: 12px;
-        }}
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
-
-# --------- call once near the top of your app ----------
-add_scrolling_bg("assets/wedding_bg.jpg",
-                 veil_opacity=0.05,   # 35 % white veil
-                 veil_rgb=(255, 255, 255))
-
-
-# Date Countdown
-today        = date.today()
-wedding_day  = date(2025, 8, 23)   # YYYY, M, D
-
-raw_gap      = (wedding_day - today).days   # difference in days
-days_left    = max(raw_gap - 1, 0)          # exclude the wedding day itself
-
-st.metric("⏳ Days until wedding", f"{days_left} days")
-
-# Side Menu
+# ──────────────────  MENU  ──────────────────
 menu = st.sidebar.radio(
     "Menu",
-    ("Add Income", "Add Expense", "Budgets", "Dashboard"),
+    ("Add Income", "Add Expense", "Budgets", "Dashboard", "Manage")
 )
 
-# ---------- Add Income ----------
+# ──────────────────  ADD INCOME  ──────────────────
 if menu == "Add Income":
     st.subheader("➕ Add Income")
-    in_date = st.date_input("Date", value=today)
-    in_amount = st.number_input("Amount (LKR)", min_value=0.0, step=1000.0)
-    in_source = st.selectbox("Source", ("Salary", "Freelance", "Gift", "Other"))
-    in_notes = st.text_input("Notes (optional)")
-    if st.button("Add Income") and in_amount > 0:
-        run(
-            "insert into income (date, amount_lkr, source, notes) "
-            "values (:d, :a, :s, :n)",
-            dict(d=in_date, a=in_amount, s=in_source, n=in_notes),
-        )
+    ts        = datetime_input("Income", today)
+    amount    = st.number_input("Amount (LKR)", 0.0, step=1000.0)
+    src       = st.selectbox("Source", ("Salary","Freelance","Gift","Other"))
+    notes     = st.text_input("Notes (optional)")
+    if st.button("Add Income") and amount > 0:
+        run("insert into income (date, amount_lkr, source, notes) "
+            "values (:d,:a,:s,:n)",
+            dict(d=ts, a=amount, s=src, n=notes))
         st.success("Income added!")
 
-# ---------- Add Expense ----------
+# ──────────────────  ADD EXPENSE  ──────────────────
 elif menu == "Add Expense":
     st.subheader("➖ Add Expense")
-    ex_date = st.date_input("Date", value=today, key="ex_date")
-    ex_amount = st.number_input("Amount (LKR)", min_value=0.0, step=1000.0, key="ex_amt")
-    ex_cat = st.text_input("Category (e.g., Groom Suit, Ring, Vehicle Rent)")
-    ex_notes = st.text_input("Notes (optional)", key="ex_notes")
-    if st.button("Add Expense") and ex_amount > 0 and ex_cat.strip():
-        run(
-            "insert into expense (date, amount_lkr, category, notes) "
-            "values (:d, :a, :c, :n)",
-            dict(d=ex_date, a=ex_amount, c=ex_cat.strip(), n=ex_notes),
-        )
+    ts        = datetime_input("Expense", today)
+    amt       = st.number_input("Amount (LKR)", 0.0, step=1000.0, key="ex_amt")
+    cat       = st.text_input("Category (e.g., Groom Suit, Ring)")
+    notes     = st.text_input("Notes (optional)", key="ex_notes")
+    if st.button("Add Expense") and amt > 0 and cat.strip():
+        run("insert into expense (date, amount_lkr, category, notes) "
+            "values (:d,:a,:c,:n)",
+            dict(d=ts, a=amt, c=cat.strip(), n=notes))
         st.success("Expense added!")
 
-# ---------- Budgets ----------
+# ──────────────────  BUDGETS  ──────────────────
 elif menu == "Budgets":
     st.subheader("📋 Category Budgets")
     df_bud = load_table("budget")
-    st.dataframe(df_bud if not df_bud.empty else pd.DataFrame(columns=["category", "limit_lkr"]))
+    st.dataframe(df_bud if not df_bud.empty else
+                 pd.DataFrame(columns=["category","limit_lkr"]))
     st.markdown("---")
     b_cat = st.text_input("Category")
-    b_limit = st.number_input("Limit (LKR)", min_value=0.0, step=10000.0)
+    b_lim = st.number_input("Limit (LKR)", 0.0, step=10000.0)
     if st.button("Save / Update Budget") and b_cat.strip():
-        run(
-            "insert into budget (category, limit_lkr) "
-            "values (:c, :l) on conflict (category) do update set limit_lkr = :l",
-            dict(c=b_cat.strip(), l=b_limit),
-        )
+        run("insert into budget (category,limit_lkr) "
+            "values (:c,:l) on conflict (category) "
+            "do update set limit_lkr=:l",
+            dict(c=b_cat.strip(), l=b_lim))
         st.success("Budget saved/updated!")
 
-# ---------- Dashboard ----------
-# ---------- Dashboard ----------
-else:
+# ──────────────────  DASHBOARD  ──────────────────
+elif menu == "Dashboard":
     st.subheader("📊 Dashboard")
 
-    df_inc = load_table("income")
-    df_exp = load_table("expense")
-    df_bud = load_table("budget")
+    df_inc, df_exp, df_bud = load_table("income"), load_table("expense"), load_table("budget")
+    tot_inc, tot_exp = df_inc["amount_lkr"].sum(), df_exp["amount_lkr"].sum()
+    bal = tot_inc - tot_exp
 
-    total_income  = df_inc["amount_lkr"].sum() if not df_inc.empty else 0
-    total_expense = df_exp["amount_lkr"].sum() if not df_exp.empty else 0
-    balance       = total_income - total_expense
+    c1,c2,c3 = st.columns(3)
+    c1.metric("Total Income",  f"LKR {tot_inc:,.0f}")
+    c2.metric("Total Expense", f"LKR {tot_exp:,.0f}")
+    c3.metric("Balance",       f"LKR {bal:,.0f}")
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Total Income",  f"LKR {total_income:,.0f}")
-    col2.metric("Total Expense", f"LKR {total_expense:,.0f}")
-    col3.metric("Balance",       f"LKR {balance:,.0f}")
-
-    # ────────── Spent vs Budget bar chart ──────────
+    # spent vs budget
     if not df_exp.empty:
         spent = df_exp.groupby("category")["amount_lkr"].sum()
-        limit = (
-            df_bud.set_index("category")["limit_lkr"]
-            if not df_bud.empty else pd.Series(dtype=float)
-        )
+        limit = df_bud.set_index("category")["limit_lkr"] if not df_bud.empty else pd.Series(dtype=float)
         bar_df = pd.concat([spent, limit], axis=1).fillna(0).reset_index()
-        bar_df.columns = ["Category", "Spent", "Budget"]
-
+        bar_df.columns = ["Category","Spent","Budget"]
         fig1 = go.Figure()
         fig1.add_bar(x=bar_df["Category"], y=bar_df["Spent"],  name="Spent")
         fig1.add_bar(x=bar_df["Category"], y=bar_df["Budget"], name="Budget")
-        fig1.update_layout(barmode="group",
-                           title="Spent vs Budget by Category")
+        fig1.update_layout(barmode="group", title="Spent vs Budget by Category")
         st.plotly_chart(fig1, use_container_width=True)
 
-    # ────────── Ledger + analytics ──────────
+    # ledger analytics
     if not df_inc.empty or not df_exp.empty:
-        # 1️⃣ combine tables into a time-ordered ledger
-        ledger = (
-            pd.concat(
-                [df_inc.assign(delta=df_inc["amount_lkr"]),
-                 df_exp.assign(delta=-df_exp["amount_lkr"])],
-                ignore_index=True
-            )
-            .sort_values("date", kind="stable")
-            .reset_index(drop=True)
-        )
-
-        ledger["date"] = pd.to_datetime(ledger["date"])  # ensure datetime dtype
-        # synthetic +1s offset for duplicates within the same day
-        ledger["date"] += pd.to_timedelta(
-            ledger.groupby(ledger["date"].dt.date).cumcount(), unit="s"
-        )
+        ledger = (pd.concat([df_inc.assign(delta=df_inc["amount_lkr"]),
+                             df_exp.assign(delta=-df_exp["amount_lkr"])])
+                  .sort_values("date", kind="stable")
+                  .reset_index(drop=True))
+        ledger["date"] = pd.to_datetime(ledger["date"])
         ledger["balance"] = ledger["delta"].cumsum()
 
-        # 2️⃣ staircase running-balance plot
+        # running balance
         fig2 = go.Figure()
-        fig2.add_scatter(x=ledger["date"],
-                         y=ledger["balance"],
-                         mode="lines+markers",
-                         line_shape="hv",
+        fig2.add_scatter(x=ledger["date"], y=ledger["balance"],
+                         mode="lines+markers", line_shape="hv",
                          name="Running balance")
         fig2.update_layout(title="Running Balance – every transaction",
-                           xaxis_title="Date / Time",
-                           yaxis_title="LKR")
+                           xaxis_title="Date / Time", yaxis_title="LKR")
         st.plotly_chart(fig2, use_container_width=True)
 
-        # 3️⃣ daily in/out bars
-        daily = (
-            ledger
-            .groupby(ledger["date"].dt.date)["delta"]
-            .agg(received=lambda s: s[s > 0].sum(),
-                 spent   =lambda s: -s[s < 0].sum())
-            .reset_index(names="day")
-        )
+        # daily cash-in / cash-out
+        daily = (ledger.groupby(ledger["date"].dt.date)["delta"]
+                 .agg(received=lambda s: s[s>0].sum(),
+                      spent   =lambda s: -s[s<0].sum())
+                 .reset_index(names="day"))
         if not daily.empty:
             fig3 = go.Figure()
-            fig3.add_bar(x=daily["day"], y=daily["received"],
-                         name="Received", marker_color="green")
-            fig3.add_bar(x=daily["day"], y=daily["spent"],
-                         name="Spent",    marker_color="red")
-            fig3.update_layout(barmode="group",
-                               title="Daily cash-in / cash-out",
+            fig3.add_bar(x=daily["day"], y=daily["received"], name="Received", marker_color="green")
+            fig3.add_bar(x=daily["day"], y=daily["spent"],    name="Spent",    marker_color="red")
+            fig3.update_layout(barmode="group", title="Daily cash-in / cash-out",
                                xaxis_title="Day", yaxis_title="LKR")
             st.plotly_chart(fig3, use_container_width=True)
+
+# ──────────────────  MANAGE (edit / delete)  ──────────────────
+else:
+    st.subheader("🛠 Manage Entries (edit / delete)")
+    tbl = st.selectbox("Choose table", ("income","expense"))
+    df  = load_table(tbl).sort_values("date", ascending=False).reset_index(drop=True)
+
+    # Allow editing of amount & notes
+    edited = st.data_editor(
+        df,
+        column_config={"amount_lkr":"numeric","notes":"text"},
+        disabled=["id","date","source","category"],
+        num_rows="dynamic",
+        use_container_width=True,
+        key="editor"
+    )
+
+    if st.button("💾 Save changes"):
+        diff = edited.compare(df)
+        for idx in diff.index.unique(level=0):
+            row = edited.loc[idx]
+            run(f"update {tbl} set amount_lkr=:a, notes=:n where id=:i",
+                dict(a=row["amount_lkr"], n=row["notes"], i=row["id"]))
+        st.success("Rows updated!  Reload Dashboard to see effect.")
+
+    del_ids = st.multiselect("Select IDs to delete", df["id"])
+    if st.button("🗑 Delete selected") and del_ids:
+        run(f"delete from {tbl} where id = any(:ids)", dict(ids=tuple(del_ids)))
+        st.warning(f"Deleted {len(del_ids)} rows – refresh page to update.")
