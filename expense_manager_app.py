@@ -39,38 +39,36 @@ import streamlit as st
 import base64
 from pathlib import Path
 
-def add_scrolling_bg(image_path: str, opacity: float = 0.35):
+def add_scrolling_bg(image_path: str,
+                     veil_opacity: float = 0.35,
+                     veil_rgb: tuple[int, int, int] = (255, 255, 255)):
     """
-    Adds a scrolling, dimmed background image to the entire page.
-
+    Adds a scrolling background image with a built-in translucent veil.
+    
     Parameters
     ----------
-    image_path : str
-        Local path, e.g. 'assets/wedding_bg.jpg'.
-    opacity : float
-        0 = transparent overlay, 1 = solid.
+    image_path   : str   Path to local JPG/PNG inside the repo, e.g. 'assets/wedding_bg.jpg'.
+    veil_opacity : float 0 (transparent) … 1 (solid).  0.35-0.45 keeps text readable.
+    veil_rgb     : tuple Veil colour as (R, G, B).  Use (0,0,0) for a dark tint.
     """
-    img_bytes = Path(image_path).read_bytes()
-    encoded   = base64.b64encode(img_bytes).decode()
+    # base-64-encode the local file
+    img_data = Path(image_path).read_bytes()
+    img_b64  = base64.b64encode(img_data).decode()
+
+    r, g, b  = veil_rgb
+    veil_rgba = f"rgba({r},{g},{b},{veil_opacity})"
 
     st.markdown(
         f"""
         <style>
-        /* 1️⃣ put image on <body>, so it moves with page scroll */
-        body {{
-            background: url("data:image/jpg;base64,{encoded}") center/cover no-repeat scroll;
+        /* Root element for every page in Streamlit */
+        .stApp {{
+            /* ① dimming veil, ② actual photo */
+            background:
+                linear-gradient({veil_rgba}, {veil_rgba}),
+                url("data:image/jpg;base64,{img_b64}") center/cover no-repeat scroll;
         }}
-
-        /* 2️⃣ overlay that ALSO scrolls (absolute, not fixed) */
-        body::before {{
-            content: "";
-            position: absolute;
-            inset: 0;
-            background: rgba(255,255,255,{opacity});
-            pointer-events: none;
-        }}
-
-        /* optional translucent sidebar */
+        /* Optional glassy sidebar */
         div[data-testid="stSidebar"] > div:first-child {{
             background: rgba(255,255,255,0.85);
             border-radius: 12px;
@@ -79,8 +77,12 @@ def add_scrolling_bg(image_path: str, opacity: float = 0.35):
         """,
         unsafe_allow_html=True
     )
-# call once near top of app
-add_scrolling_bg("assets/wedding_bg.jpg", opacity=0.05)
+
+# --------- call once near the top of your app ----------
+add_scrolling_bg("assets/wedding_bg.jpg",
+                 veil_opacity=0.05,   # 35 % white veil
+                 veil_rgb=(255, 255, 255))
+
 
 # Date Countdown
 today        = date.today()
