@@ -35,6 +35,35 @@ st.set_page_config(page_title="Wedding Expense Tracker", layout="centered")
 st.title("💍 Wedding Expense & Income Tracker")
 
 #Background
+import streamlit as st
+import base64
+from pathlib import Path
+
+def add_local_bg(image_path: str):
+    """
+    Reads a local image file and sets it as a full-page background in Streamlit.
+    """
+    img_bytes = Path(image_path).read_bytes()
+    encoded   = base64.b64encode(img_bytes).decode()
+
+    st.markdown(
+        f"""
+        <style>
+        .stApp {{
+            background: url("data:image/jpg;base64,{encoded}") center/cover no-repeat fixed;
+        }}
+        /* optional translucent sidebar */
+        div[data-testid="stSidebar"] > div:first-child {{
+            background: rgba(255,255,255,0.85);
+            border-radius: 12px;
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+# call this once near the top of expense_tracker_app.py
+add_local_bg("assets/wedding_bg.jpg")
 
 # Date Countdown
 today        = date.today()
