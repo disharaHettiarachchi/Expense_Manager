@@ -35,25 +35,6 @@ st.set_page_config(page_title="Wedding Expense Tracker", layout="centered")
 st.title("💍 Wedding Expense & Income Tracker")
 
 #Background
-def add_bg_from_url(url):
-    st.markdown(
-        f"""
-        <style>
-        .stApp {{
-            background: url('{url}') no-repeat center center fixed;
-            background-size: cover;
-        }}
-        /* optional glass-card effect */
-        div[data-testid="stSidebar"] > div:first-child {{
-            background: rgba(255,255,255,0.8);
-            border-radius: 12px;
-        }}
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
-
-add_bg_from_url("https://www.google.com/url?sa=i&url=https%3A%2F%2Fwww.dreamstime.com%2Fbow-tie-piggy-bank-wedding-budget-image217089437&psig=AOvVaw3rvPKxrNxLqiAQcMUMRhYw&ust=1751249055110000&source=images&cd=vfe&opi=89978449&ved=0CBUQjRxqFwoTCNiDwrLFlY4DFQAAAAAdAAAAABAE")
 
 # Date Countdown
 today        = date.today()
