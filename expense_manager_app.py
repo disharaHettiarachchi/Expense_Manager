@@ -16,7 +16,7 @@ import streamlit as st
 
 try:
     psycopg2.connect(st.secrets["DATABASE_URL"])
-    st.success("Connection Successful!")
+    st.success("Wedding of Himashi & Dishara!")
 except Exception as e:
     st.error(e)
 
