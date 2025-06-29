@@ -79,7 +79,7 @@ def add_local_bg(image_path: str, opacity: float = 0.40):
     )
 
 # ---------- call once near the top ----------
-add_local_bg("assets/wedding_bg.jpg", opacity=0.85)
+add_local_bg("assets/wedding_bg.jpg", opacity=0.05)
 
 
 # Date Countdown
