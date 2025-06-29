@@ -146,6 +146,7 @@ elif menu == "Budgets":
         st.success("Budget saved/updated!")
 
 # ---------- Dashboard ----------
+# ---------- Dashboard ----------
 else:
     st.subheader("📊 Dashboard")
 
@@ -153,86 +154,79 @@ else:
     df_exp = load_table("expense")
     df_bud = load_table("budget")
 
-    total_income = df_inc["amount_lkr"].sum() if not df_inc.empty else 0
+    total_income  = df_inc["amount_lkr"].sum() if not df_inc.empty else 0
     total_expense = df_exp["amount_lkr"].sum() if not df_exp.empty else 0
-    balance = total_income - total_expense
+    balance       = total_income - total_expense
 
     col1, col2, col3 = st.columns(3)
-    col1.metric("Total Income", f"LKR {total_income:,.0f}")
+    col1.metric("Total Income",  f"LKR {total_income:,.0f}")
     col2.metric("Total Expense", f"LKR {total_expense:,.0f}")
-    col3.metric("Balance", f"LKR {balance:,.0f}")
+    col3.metric("Balance",       f"LKR {balance:,.0f}")
 
-    # Spent vs Budget bar chart
+    # ────────── Spent vs Budget bar chart ──────────
     if not df_exp.empty:
         spent = df_exp.groupby("category")["amount_lkr"].sum()
-        limit = df_bud.set_index("category")["limit_lkr"] if not df_bud.empty else pd.Series(dtype=float)
+        limit = (
+            df_bud.set_index("category")["limit_lkr"]
+            if not df_bud.empty else pd.Series(dtype=float)
+        )
         bar_df = pd.concat([spent, limit], axis=1).fillna(0).reset_index()
         bar_df.columns = ["Category", "Spent", "Budget"]
 
         fig1 = go.Figure()
-        fig1.add_bar(x=bar_df["Category"], y=bar_df["Spent"], name="Spent")
+        fig1.add_bar(x=bar_df["Category"], y=bar_df["Spent"],  name="Spent")
         fig1.add_bar(x=bar_df["Category"], y=bar_df["Budget"], name="Budget")
-        fig1.update_layout(barmode="group", title="Spent vs Budget by Category")
+        fig1.update_layout(barmode="group",
+                           title="Spent vs Budget by Category")
         st.plotly_chart(fig1, use_container_width=True)
 
-    # Cash-flow line chart
-    # ─────────── Cash-flow analytics  (replace your old block) ───────────
+    # ────────── Ledger + analytics ──────────
     if not df_inc.empty or not df_exp.empty:
-     # ---------- Build ledger with unique datetime per row ----------
-    ledger = (
-        pd.concat(
-            [
-                df_inc.assign(delta=df_inc["amount_lkr"]),
-                df_exp.assign(delta=-df_exp["amount_lkr"])
-            ],
-            ignore_index=True
+        # 1️⃣ combine tables into a time-ordered ledger
+        ledger = (
+            pd.concat(
+                [df_inc.assign(delta=df_inc["amount_lkr"]),
+                 df_exp.assign(delta=-df_exp["amount_lkr"])],
+                ignore_index=True
+            )
+            .sort_values("date", kind="stable")
+            .reset_index(drop=True)
         )
-        .sort_values("date", kind="stable")
-        .reset_index(drop=True)
-    )
 
-    # 1️⃣ ensure datetime dtype (pandas to_datetime is idempotent if already OK)
-    ledger["date"] = pd.to_datetime(ledger["date"])
+        ledger["date"] = pd.to_datetime(ledger["date"])  # ensure datetime dtype
+        # synthetic +1s offset for duplicates within the same day
+        ledger["date"] += pd.to_timedelta(
+            ledger.groupby(ledger["date"].dt.date).cumcount(), unit="s"
+        )
+        ledger["balance"] = ledger["delta"].cumsum()
 
-    # 2️⃣ add +N seconds for rows that share the same calendar day
-    ledger["date"] = ledger["date"] + pd.to_timedelta(
-        ledger.groupby(ledger["date"].dt.date).cumcount(), unit="s"
-    )
-
-    # 3️⃣ running balance
-    ledger["balance"] = ledger["delta"].cumsum()
-
-    # ---------- Stair-step plot ----------
-    fig2 = go.Figure()
-    fig2.add_scatter(
-        x=ledger["date"],
-        y=ledger["balance"],
-        mode="lines+markers",
-        line_shape="hv",
-        name="Running balance"
-    )
-    fig2.update_layout(
-        title="Running Balance – every transaction",
-        xaxis_title="Date / Time",
-        yaxis_title="LKR"
-    )
-    st.plotly_chart(fig2, use_container_width=True)
-
-    # ---------- Daily cash-in / cash-out ----------
-    daily = (
-        ledger
-        .groupby(ledger["date"].dt.date)["delta"]
-        .agg(received=lambda s: s[s > 0].sum(),
-             spent    =lambda s: -s[s < 0].sum())
-        .reset_index(names="day")
-    )
-
-    if not daily.empty:
-        fig3 = go.Figure()
-        fig3.add_bar(x=daily["day"], y=daily["received"], name="Received", marker_color="green")
-        fig3.add_bar(x=daily["day"], y=daily["spent"],    name="Spent",    marker_color="red")
-        fig3.update_layout(barmode="group",
-                           title="Daily cash-in / cash-out",
-                           xaxis_title="Day",
+        # 2️⃣ staircase running-balance plot
+        fig2 = go.Figure()
+        fig2.add_scatter(x=ledger["date"],
+                         y=ledger["balance"],
+                         mode="lines+markers",
+                         line_shape="hv",
+                         name="Running balance")
+        fig2.update_layout(title="Running Balance – every transaction",
+                           xaxis_title="Date / Time",
                            yaxis_title="LKR")
-        st.plotly_chart(fig3, use_container_width=True)
+        st.plotly_chart(fig2, use_container_width=True)
+
+        # 3️⃣ daily in/out bars
+        daily = (
+            ledger
+            .groupby(ledger["date"].dt.date)["delta"]
+            .agg(received=lambda s: s[s > 0].sum(),
+                 spent   =lambda s: -s[s < 0].sum())
+            .reset_index(names="day")
+        )
+        if not daily.empty:
+            fig3 = go.Figure()
+            fig3.add_bar(x=daily["day"], y=daily["received"],
+                         name="Received", marker_color="green")
+            fig3.add_bar(x=daily["day"], y=daily["spent"],
+                         name="Spent",    marker_color="red")
+            fig3.update_layout(barmode="group",
+                               title="Daily cash-in / cash-out",
+                               xaxis_title="Day", yaxis_title="LKR")
+            st.plotly_chart(fig3, use_container_width=True)
