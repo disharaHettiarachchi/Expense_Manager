@@ -39,16 +39,16 @@ import streamlit as st
 import base64
 from pathlib import Path
 
-def add_local_bg(image_path: str, opacity: float = 0.40):
+def add_scrolling_bg(image_path: str, opacity: float = 0.35):
     """
-    Sets a scrolling, dimmed background image for the entire Streamlit app.
-    
+    Adds a scrolling, dimmed background image to the entire page.
+
     Parameters
     ----------
     image_path : str
-        Path to a local JPG/PNG in your repo (e.g. 'assets/wedding_bg.jpg').
+        Local path, e.g. 'assets/wedding_bg.jpg'.
     opacity : float
-        0 = invisible overlay (no dimming), 1 = fully opaque overlay.
+        0 = transparent overlay, 1 = solid.
     """
     img_bytes = Path(image_path).read_bytes()
     encoded   = base64.b64encode(img_bytes).decode()
@@ -56,19 +56,21 @@ def add_local_bg(image_path: str, opacity: float = 0.40):
     st.markdown(
         f"""
         <style>
-        /* Main background */
-        .stApp {{
+        /* 1️⃣ put image on <body>, so it moves with page scroll */
+        body {{
             background: url("data:image/jpg;base64,{encoded}") center/cover no-repeat scroll;
         }}
-        /* Dim-the-photo overlay */
-        .stApp::before {{
+
+        /* 2️⃣ overlay that ALSO scrolls (absolute, not fixed) */
+        body::before {{
             content: "";
-            position: fixed;               /* cover entire viewport */
+            position: absolute;
             inset: 0;
-            background: rgba(255,255,255,{opacity});  /* white veil; change to 0,0,0 for dark */
-            pointer-events: none;          /* let clicks pass through */
+            background: rgba(255,255,255,{opacity});
+            pointer-events: none;
         }}
-        /* Optional: a gently frosted sidebar */
+
+        /* optional translucent sidebar */
         div[data-testid="stSidebar"] > div:first-child {{
             background: rgba(255,255,255,0.85);
             border-radius: 12px;
