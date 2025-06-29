@@ -56,10 +56,12 @@ def add_bg_from_url(url):
 add_bg_from_url("https://www.google.com/url?sa=i&url=https%3A%2F%2Fwww.dreamstime.com%2Fbow-tie-piggy-bank-wedding-budget-image217089437&psig=AOvVaw3rvPKxrNxLqiAQcMUMRhYw&ust=1751249055110000&source=images&cd=vfe&opi=89978449&ved=0CBUQjRxqFwoTCNiDwrLFlY4DFQAAAAAdAAAAABAE")
 
 # Date Countdown
-today = date.today()
-days_left = (wedding_day - today).days       # raw gap
-if days_left > 0:
-    days_left -= 1                           # exclude the big-day itself
+today        = date.today()
+wedding_day  = date(2025, 8, 23)   # YYYY, M, D
+
+raw_gap      = (wedding_day - today).days   # difference in days
+days_left    = max(raw_gap - 1, 0)          # exclude the wedding day itself
+
 st.metric("⏳ Days until wedding", f"{days_left} days")
 
 # Side Menu
