@@ -79,10 +79,8 @@ def add_scrolling_bg(image_path: str, opacity: float = 0.35):
         """,
         unsafe_allow_html=True
     )
-
-# ---------- call once near the top ----------
-add_local_bg("assets/wedding_bg.jpg", opacity=0.05)
-
+# call once near top of app
+add_scrolling_bg("assets/wedding_bg.jpg", opacity=0.05)
 
 # Date Countdown
 today        = date.today()
