@@ -276,8 +276,10 @@ else:
 
     del_ids = st.multiselect("Select IDs to delete", df["id"])
     if st.button("🗑 Delete selected") and del_ids:
-        run(f"delete from {tbl} where id = any(:ids)", dict(ids=tuple(del_ids)))
+        # pass the raw list; let psycopg2 adapt it to a Postgres array
+        run(f"delete from {tbl} where id = any(:ids)", {"ids": del_ids})
         st.warning(f"Deleted {len(del_ids)} rows – refresh page to update.")
+
 
 # ──────────────────  MOBILE-FRIENDLY SCROLLBAR  ──────────────────
 st.markdown("""
