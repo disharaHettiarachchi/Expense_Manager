@@ -147,14 +147,14 @@ elif menu == "Pending":
             run("update pending_income set cleared=true where id=:i", {"i": pid})
         st.success(f"{len(chosen)} item(s) cleared into Income — check Dashboard!")
 
-# helper just above Dashboard branch
-def fmt_rupees(n):
-    if n >= 1_000_000:
-        return f"LKR {n/1_000_000:.1f} M"
-    elif n >= 1_000:
-        return f"LKR {n/1_000:.0f} k"
-    else:
-        return f"LKR {n:,.0f}"
+    # helper just above Dashboard branch
+    def fmt_rupees(n):
+        if n >= 1_000_000:
+            return f"LKR {n/1_000_000:.1f} M"
+        elif n >= 1_000:
+            return f"LKR {n/1_000:.0f} k"
+        else:
+            return f"LKR {n:,.0f}"
 
 # ──────────────────  DASHBOARD  ──────────────────
 elif menu == "Dashboard":
