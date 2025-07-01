@@ -5,6 +5,7 @@ from sqlalchemy import create_engine, text
 from datetime import date, datetime, timedelta
 from pathlib import Path
 import base64
+from zoneinfo import ZoneInfo 
 
 # ──────────────────  DB CONNECTION  ──────────────────
 engine = create_engine(
@@ -31,12 +32,20 @@ def run(query, params=None, fetch=False):
 def load_table(tbl):
     return pd.read_sql(f"select * from {tbl}", engine)
 
-def datetime_input(label, default_date):
-    """Returns a combined datetime from two widgets."""
-    c1, c2 = st.columns([2, 1])
-    d_val = c1.date_input(f"{label} – date", value=default_date, key=f"d_{label}")
-    t_val = c2.time_input(f"{label} – time", value=datetime.now().time(), key=f"t_{label}")
-    return datetime.combine(d_val, t_val)
+def datetime_input(label: str,
+                   default_date: date,
+                   default_time = datetime.strptime("12:00", "%H:%M").time(),
+                   tz = ZoneInfo("Asia/Colombo")) -> datetime:
+    """Two widgets → one timezone-aware datetime."""
+    c_date, c_time = st.columns([2, 1])
+    d_val = c_date.date_input(f"{label} – date", value=default_date,
+                              key=f"d_{label}")
+    t_val = c_time.time_input(f"{label} – time", value=default_time,
+                              key=f"t_{label}")
+    # return aware dt so Postgres stores exact local wall-time
+    if t_val == default_time:
+    c_time.warning("← set the time")
+    return datetime.combine(d_val, t_val, tzinfo=tz)
 
 def add_scrolling_bg(image_path, veil_opacity=.35, veil_rgb=(255,255,255)):
     img_b64 = base64.b64encode(Path(image_path).read_bytes()).decode()
