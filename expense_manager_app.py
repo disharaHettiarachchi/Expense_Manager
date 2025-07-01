@@ -61,6 +61,19 @@ def fmt_rupees(n: float) -> str:
         return f"LKR {n/1_000:.0f} k"
     return f"LKR {n:,.0f}"
 
+@st.cache_resource
+def get_engine():
+    return create_engine(
+        st.secrets["DATABASE_URL"],
+        connect_args={"sslmode": "require"}
+    )
+
+engine = get_engine()   # use everywhere
+
+@st.cache_data(ttl=30)   # auto-refresh every 30 s
+def load_table(tbl):
+    return pd.read_sql(f"select * from {tbl}", engine)
+
 # ──────────────────  PAGE CONFIG  ──────────────────
 st.set_page_config("Wedding Expense Tracker", layout="centered")
 add_scrolling_bg("assets/wedding_bg.jpg", veil_opacity=.05)
@@ -81,29 +94,37 @@ menu = st.sidebar.radio(
 
 # ──────────────────  ADD INCOME  ──────────────────
 if menu == "Add Income":
-    st.subheader("➕ Add Income")
-    ts     = datetime_input("Income", today)
-    amount = st.number_input("Amount (LKR)", 0.0, step=1000.0)
-    src    = st.selectbox("Source", ("Salary", "Freelance", "Gift", "Other"))
-    notes  = st.text_input("Notes (optional)")
-    if st.button("Add Income") and amount > 0:
-        run("insert into income (date, amount_lkr, source, notes) "
-            "values (:d,:a,:s,:n)",
-            dict(d=ts, a=amount, s=src, n=notes))
-        st.success("Income added!")
+    with st.form(key="income_form"):
+        st.subheader("➕ Add Income")
+        ts     = datetime_input("Income", today)
+        amount = st.number_input("Amount (LKR)", 0.0, step=1000.0, key="inc_amt")
+        src    = st.selectbox("Source", ("Salary","Freelance","Gift","Other"), key="inc_src")
+        notes  = st.text_input("Notes (optional)", key="inc_note")
+        submitted = st.form_submit_button("Add Income")
+        if submitted and amount > 0:
+            run("insert into income (date, amount_lkr, source, notes) "
+                "values (:d,:a,:s,:n)",
+                dict(d=ts, a=amount, s=src, n=notes))
+            st.success("Income added!")
+            st.cache_data.clear()        # invalidate cached tables
+
 
 # ──────────────────  ADD EXPENSE  ──────────────────
 elif menu == "Add Expense":
-    st.subheader("➖ Add Expense")
-    ts   = datetime_input("Expense", today)
-    amt  = st.number_input("Amount (LKR)", 0.0, step=1000.0)
-    cat  = st.text_input("Category (e.g., Groom Suit, Ring)")
-    note = st.text_input("Notes (optional)")
-    if st.button("Add Expense") and amt > 0 and cat.strip():
-        run("insert into expense (date, amount_lkr, category, notes) "
-            "values (:d,:a,:c,:n)",
-            dict(d=ts, a=amt, c=cat.strip(), n=note))
-        st.success("Expense added!")
+    with st.form(key="expense_form"):
+        st.subheader("➖ Add Expense")
+        ts   = datetime_input("Expense", today)
+        amt  = st.number_input("Amount (LKR)", 0.0, step=1000.0, key="exp_amt")
+        cat  = st.text_input("Category (e.g., Groom Suit, Ring)", key="exp_cat")
+        note = st.text_input("Notes (optional)", key="exp_note")
+        submitted = st.form_submit_button("Add Expense")
+        if submitted and amt > 0 and cat.strip():
+            run("insert into expense (date, amount_lkr, category, notes) "
+                "values (:d,:a,:c,:n)",
+                dict(d=ts, a=amt, c=cat.strip(), n=note))
+            st.success("Expense added!")
+            st.cache_data.clear()
+
 
 # ──────────────────  BUDGETS  ──────────────────
 elif menu == "Budgets":
@@ -120,20 +141,21 @@ elif menu == "Budgets":
             dict(c=b_cat.strip(), l=b_lim))
         st.success("Budget saved/updated!")
 
-# ──────────────────  PENDING  ──────────────────
 elif menu == "Pending":
     st.subheader("🕒 Add / Review Pending Income")
-
-    colD, colA = st.columns(2)
-    p_date  = colD.date_input("Expected date", value=today + timedelta(days=7))
-    p_amt   = colA.number_input("Amount (LKR)", 0.0, step=1000.0)
-    p_src   = st.selectbox("Source", ("PayPal", "Mom", "Salary", "Other"))
-    p_note  = st.text_input("Notes (optional)")
-    if st.button("Add pending") and p_amt > 0:
-        run("insert into pending_income (expected_on, amount_lkr, source, notes) "
-            "values (:d,:a,:s,:n)",
-            dict(d=p_date, a=p_amt, s=p_src, n=p_note))
-        st.success("Pending income added!")
+    with st.form("pending_form"):
+        colD, colA = st.columns(2)
+        p_date  = colD.date_input("Expected date", value=today + timedelta(days=7))
+        p_amt   = colA.number_input("Amount (LKR)", 0.0, step=1000.0)
+        p_src   = st.selectbox("Source", ("PayPal","Mom","Salary","Other"))
+        p_note  = st.text_input("Notes (optional)")
+        submitted = st.form_submit_button("Add pending")
+        if submitted and p_amt > 0:
+            run("insert into pending_income (expected_on, amount_lkr, source, notes) "
+                "values (:d,:a,:s,:n)",
+                dict(d=p_date, a=p_amt, s=p_src, n=p_note))
+            st.success("Pending income added!")
+            st.cache_data.clear()
 
     p_df = load_table("pending_income").sort_values(["cleared", "expected_on"])
     st.dataframe(p_df, hide_index=True, use_container_width=True)
