@@ -164,7 +164,7 @@ elif menu == "Pending":
         colD, colA = st.columns(2)
         p_date  = colD.date_input("Expected date", value=today + timedelta(days=7))
         p_amt   = colA.number_input("Amount (LKR)", 0.0, step=1000.0)
-        p_src   = st.selectbox("Source", ("PayPal","Mom","Salary","Other"))
+        p_src   = st.selectbox("Source", ("PayPal","Gift","Salary","Other"))
         p_note  = st.text_input("Notes (optional)")
         submitted = st.form_submit_button("Add pending")
         if submitted and p_amt > 0:
