@@ -67,8 +67,10 @@ st.metric("⏳ Days until wedding", f"{max((wedding_day-today).days-1,0)} days")
 # ──────────────────  MENU  ──────────────────
 menu = st.sidebar.radio(
     "Menu",
-    ("Add Income", "Add Expense", "Budgets", "Dashboard", "Manage")
+    ("Add Income", "Add Expense", "Budgets",
+     "Dashboard", "Manage", "Pending") 
 )
+
 
 # ──────────────────  ADD INCOME  ──────────────────
 if menu == "Add Income":
@@ -111,6 +113,39 @@ elif menu == "Budgets":
             "do update set limit_lkr=:l",
             dict(c=b_cat.strip(), l=b_lim))
         st.success("Budget saved/updated!")
+        
+# ──────────────────  PENDING  ──────────────────
+elif menu == "Pending":
+    st.subheader("🕒 Add / Review Pending Income")
+
+    # form to add a new pledge or not-yet-liquid funds
+    colD, colA = st.columns(2)
+    p_date  = colD.date_input("Expected date", value=today + timedelta(days=7))
+    p_amt   = colA.number_input("Amount (LKR)", 0.0, step=1000.0)
+    p_src   = st.selectbox("Source", ("PayPal", "Mom", "Salary", "Other"))
+    p_notes = st.text_input("Notes (optional)")
+    if st.button("Add pending") and p_amt > 0:
+        run("insert into pending_income (expected_on, amount_lkr, source, notes) "
+            "values (:d,:a,:s,:n)",
+            dict(d=p_date, a=p_amt, s=p_src, n=p_notes))
+        st.success("Pending income added!")
+
+    # show table
+    p_df = load_table("pending_income").sort_values(
+            ["cleared","expected_on"])
+    st.dataframe(p_df, hide_index=True, use_container_width=True)
+
+    # mark selected as cleared
+    unclrd = p_df.loc[~p_df["cleared"], "id"]
+    chosen = st.multiselect("Select IDs to move to cash-in-hand", unclrd)
+    if st.button("✅ Move to Income") and chosen:
+        for pid in chosen:
+            row = p_df.loc[p_df["id"]==pid].iloc[0]
+            run("insert into income (date, amount_lkr, source, notes) "
+                "values (now(), :a, :s, :n)",
+                dict(a=row["amount_lkr"], s=row["source"], n=row["notes"]))
+            run("update pending_income set cleared=true where id=:i", {"i": pid})
+        st.success(f"{len(chosen)} item(s) cleared into Income — check Dashboard!")
 
 # ──────────────────  DASHBOARD  ──────────────────
 elif menu == "Dashboard":
@@ -119,11 +154,28 @@ elif menu == "Dashboard":
     df_inc, df_exp, df_bud = load_table("income"), load_table("expense"), load_table("budget")
     tot_inc, tot_exp = df_inc["amount_lkr"].sum(), df_exp["amount_lkr"].sum()
     bal = tot_inc - tot_exp
+    
+    p_df       = load_table("pending_income")
+    pending_li = p_df.loc[~p_df["cleared"], "amount_lkr"].sum()
 
-    c1,c2,c3 = st.columns(3)
+    c1,c2,c3,c4 = st.columns(4)
     c1.metric("Total Income",  f"LKR {tot_inc:,.0f}")
     c2.metric("Total Expense", f"LKR {tot_exp:,.0f}")
     c3.metric("Balance",       f"LKR {bal:,.0f}")
+    c4.metric("Pending",       f"LKR {pending_li:,.0f}")
+
+    total_budget = df_bud["limit_lkr"].sum()
+    if total_budget > 0:
+        remaining = max(total_budget - (bal + pending_li), 0)
+        fig_stack = go.Figure()
+        fig_stack.add_bar(name="Cash",    y=[bal])
+        fig_stack.add_bar(name="Pending", y=[pending_li])
+        fig_stack.add_bar(name="Remaining budget", y=[remaining])
+        fig_stack.update_layout(barmode="stack",
+                                title="Cash + Pending vs Budget",
+                                showlegend=True,
+                                xaxis_visible=False)
+        st.plotly_chart(fig_stack, use_container_width=True)
 
     # spent vs budget
     if not df_exp.empty:
