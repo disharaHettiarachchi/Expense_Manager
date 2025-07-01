@@ -147,6 +147,15 @@ elif menu == "Pending":
             run("update pending_income set cleared=true where id=:i", {"i": pid})
         st.success(f"{len(chosen)} item(s) cleared into Income — check Dashboard!")
 
+# helper just above Dashboard branch
+def fmt_rupees(n):
+    if n >= 1_000_000:
+        return f"LKR {n/1_000_000:.1f} M"
+    elif n >= 1_000:
+        return f"LKR {n/1_000:.0f} k"
+    else:
+        return f"LKR {n:,.0f}"
+
 # ──────────────────  DASHBOARD  ──────────────────
 elif menu == "Dashboard":
     st.subheader("📊 Dashboard")
@@ -158,11 +167,12 @@ elif menu == "Dashboard":
     p_df       = load_table("pending_income")
     pending_li = p_df.loc[~p_df["cleared"], "amount_lkr"].sum()
 
-    c1,c2,c3,c4 = st.columns(4)
-    c1.metric("Total Income",  f"LKR {tot_inc:,.0f}")
-    c2.metric("Total Expense", f"LKR {tot_exp:,.0f}")
-    c3.metric("Balance",       f"LKR {bal:,.0f}")
-    c4.metric("Pending",       f"LKR {pending_li:,.0f}")
+    c1,c2,c3,c4 = st.columns([1.3,1.3,1.3,1.3])   # widen a bit
+    c1.metric("Total Income",  fmt_rupees(tot_inc))
+    c2.metric("Total Expense", fmt_rupees(tot_exp))
+    c3.metric("Balance",       fmt_rupees(bal))
+    c4.metric("Pending",       fmt_rupees(pending_li))
+
 
     total_budget = df_bud["limit_lkr"].sum()
     if total_budget > 0:
@@ -198,7 +208,8 @@ elif menu == "Dashboard":
                   )
                   .sort_values("date", kind="stable")
                   .reset_index(drop=True))
-        ledger["date"]    = pd.to_datetime(ledger["date"])
+        ledger["date"] = pd.to_datetime(ledger["date"]).dt.tz_localize(None)
+
         ledger["balance"] = ledger["delta"].cumsum()
 
         # ---------- 1. Burn-down gauge ----------
@@ -282,7 +293,7 @@ elif menu == "Dashboard":
             coef = pd.Series(days).corr(ledger["balance"])   # simple slope sign
             slope = (ledger["balance"].iloc[-1]-
                      ledger["balance"].iloc[0]) / max(days.iloc[-1],1)
-            future_days = (horizon - ledger["date"].iloc[-1]).days
+            future_days = (horizon - ledger["date"].iloc[-1].to_pydatetime()).days
             forecast    = ledger["balance"].iloc[-1] + slope*future_days
             fig_f = go.Figure()
             fig_f.add_scatter(x=ledger["date"], y=ledger["balance"],
