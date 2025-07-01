@@ -352,11 +352,12 @@ else:   # menu == "Manage"
 
     tbl = st.selectbox("Choose table", ("income", "expense", "budget"))
 
-    df = load_table(tbl).sort_values(df.columns[0], ascending=False).reset_index(drop=True)
+    df  = load_table(tbl)
+    df  = df.sort_values(df.columns[0], ascending=False).reset_index(drop=True)
 
     # column rules per table
     if tbl == "budget":
-        disabled_cols = ["category"]       # keep category as key
+        disabled_cols = ["category"]          # keep category immutable
     else:
         disabled_cols = ["id", "date", "source", "category"]
 
@@ -381,7 +382,7 @@ else:   # menu == "Manage"
         st.success("Rows updated!")
         st.cache_data.clear()
 
-    del_key = "category" if tbl == "budget" else "id"
+    del_key  = "category" if tbl == "budget" else "id"
     del_vals = st.multiselect(f"Select {del_key}(s) to delete", df[del_key])
 
     if st.button("🗑 Delete selected") and del_vals:
@@ -389,7 +390,6 @@ else:   # menu == "Manage"
         st.warning(f"Deleted {len(del_vals)} row(s).")
         st.cache_data.clear()
         st.experimental_rerun()
-
 
 
 # ──────────────────  MOBILE-FRIENDLY SCROLLBAR  ──────────────────
