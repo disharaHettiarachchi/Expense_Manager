@@ -47,7 +47,7 @@ def add_scrolling_bg(image_path, veil_opacity=.35, veil_rgb=(255,255,255)):
         .stApp {{
            background:
              linear-gradient({veil},{veil}),
-             url("data:image/jpg;base64,{img_b64}") center/cover no-repeat scroll;
+             url("data:image/jpg;base64,{img_b64}") center/cover no-repeat fixed;
         }}
         div[data-testid="stSidebar"] > div:first-child {{
            background: rgba(255,255,255,0.85); border-radius:12px;
