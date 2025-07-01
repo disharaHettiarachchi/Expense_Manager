@@ -137,16 +137,38 @@ elif menu == "Dashboard":
         fig1.update_layout(barmode="group", title="Spent vs Budget by Category")
         st.plotly_chart(fig1, use_container_width=True)
 
-    # ledger analytics
+    # ────────── Ledger + analytics (enhanced) ──────────
     if not df_inc.empty or not df_exp.empty:
-        ledger = (pd.concat([df_inc.assign(delta=df_inc["amount_lkr"]),
-                             df_exp.assign(delta=-df_exp["amount_lkr"])])
+        # --- Build ledger with true timestamps ---
+        ledger = (pd.concat(
+                     [df_inc.assign(delta=df_inc["amount_lkr"]),
+                      df_exp.assign(delta=-df_exp["amount_lkr"])]
+                  )
                   .sort_values("date", kind="stable")
                   .reset_index(drop=True))
-        ledger["date"] = pd.to_datetime(ledger["date"])
+        ledger["date"]    = pd.to_datetime(ledger["date"])
         ledger["balance"] = ledger["delta"].cumsum()
 
-        # running balance
+        # ---------- 1. Burn-down gauge ----------
+        total_budget = df_bud["limit_lkr"].sum() or 1   # avoid ÷0
+        spent_pct    = min(ledger["balance"].iloc[-1] * -1 / total_budget * 100, 100)
+        fig_g = go.Figure(go.Indicator(
+            mode="gauge+number",
+            value=spent_pct,
+            number={"suffix":"%"},
+            title={"text":"% of Budget Spent"},
+            gauge={
+                "axis":{"range":[0,100]},
+                "bar":{"color":"red"},
+                "steps":[
+                    {"range":[0,80],"color":"lightgreen"},
+                    {"range":[80,100],"color":"orange"}
+                ]
+            }
+        ))
+        st.plotly_chart(fig_g, use_container_width=True)
+
+        # ---------- 2. Stair-step running balance ----------
         fig2 = go.Figure()
         fig2.add_scatter(x=ledger["date"], y=ledger["balance"],
                          mode="lines+markers", line_shape="hv",
@@ -155,18 +177,78 @@ elif menu == "Dashboard":
                            xaxis_title="Date / Time", yaxis_title="LKR")
         st.plotly_chart(fig2, use_container_width=True)
 
-        # daily cash-in / cash-out
+        # ---------- 3. Daily cash-in / cash-out bars ----------
         daily = (ledger.groupby(ledger["date"].dt.date)["delta"]
                  .agg(received=lambda s: s[s>0].sum(),
                       spent   =lambda s: -s[s<0].sum())
                  .reset_index(names="day"))
         if not daily.empty:
             fig3 = go.Figure()
-            fig3.add_bar(x=daily["day"], y=daily["received"], name="Received", marker_color="green")
-            fig3.add_bar(x=daily["day"], y=daily["spent"],    name="Spent",    marker_color="red")
-            fig3.update_layout(barmode="group", title="Daily cash-in / cash-out",
+            fig3.add_bar(x=daily["day"], y=daily["received"],
+                         name="Received", marker_color="green")
+            fig3.add_bar(x=daily["day"], y=daily["spent"],
+                         name="Spent",    marker_color="red")
+            fig3.update_layout(barmode="group",
+                               title="Daily cash-in / cash-out",
                                xaxis_title="Day", yaxis_title="LKR")
             st.plotly_chart(fig3, use_container_width=True)
+
+        # ---------- 4. Calendar heat-map of spend ----------
+        cal = daily.copy()
+        cal["day"] = pd.to_datetime(cal["day"])
+        heat = go.Figure(go.Heatmap(
+                x=cal["day"],
+                y=["Spent"]*len(cal),
+                z=cal["spent"],
+                colorscale="Reds",
+                showscale=False))
+        heat.update_layout(title="Spend intensity calendar",
+                           xaxis_nticks=35, yaxis_visible=False)
+        st.plotly_chart(heat, use_container_width=True)
+
+        # ---------- 5. Budget-compliance pie ----------
+        spent_by_cat = df_exp.groupby("category")["amount_lkr"].sum()
+        merged = pd.concat([spent_by_cat,
+                            df_bud.set_index("category")["limit_lkr"]],
+                           axis=1, join="inner").fillna(0)
+        def bucket(row):
+            pct = row["amount_lkr"] / row["limit_lkr"] * 100 if row["limit_lkr"] else 0
+            if pct < 80:      return "Under 80%"
+            elif pct <=100:   return "80-100%"
+            else:             return "Over"
+        merged["buck"] = merged.apply(bucket, axis=1)
+        pie_df = merged["buck"].value_counts()
+        fig_p = go.Figure(data=[go.Pie(labels=pie_df.index, values=pie_df.values,
+                                       hole=.4)])
+        fig_p.update_layout(title="Budget compliance")
+        st.plotly_chart(fig_p, use_container_width=True)
+
+        # ---------- 6. Cash-flow forecast ----------
+        horizon = datetime(2025,8,16)      # 7 days before wedding
+        if len(ledger) >= 2:
+            days = (ledger["date"] - ledger["date"].min()).dt.total_seconds()/86400
+            coef = pd.Series(days).corr(ledger["balance"])   # simple slope sign
+            slope = (ledger["balance"].iloc[-1]-
+                     ledger["balance"].iloc[0]) / max(days.iloc[-1],1)
+            future_days = (horizon - ledger["date"].iloc[-1]).days
+            forecast    = ledger["balance"].iloc[-1] + slope*future_days
+            fig_f = go.Figure()
+            fig_f.add_scatter(x=ledger["date"], y=ledger["balance"],
+                              mode="lines", name="Actual")
+            fig_f.add_scatter(x=[ledger["date"].iloc[-1], horizon],
+                              y=[ledger["balance"].iloc[-1], forecast],
+                              mode="lines", name="Forecast",
+                              line=dict(dash="dash"))
+            fig_f.update_layout(title="Balance forecast (linear)",
+                                xaxis_title="Date", yaxis_title="LKR")
+            st.plotly_chart(fig_f, use_container_width=True)
+
+        # ---------- 7. Top-5 expense table ----------
+        top5 = (df_exp.sort_values("amount_lkr", ascending=False)
+                 .head(5)[["id","date","category","amount_lkr","notes"]])
+        st.subheader("💸 Top-5 expenses so far")
+        st.dataframe(top5, hide_index=True, use_container_width=True)
+
 
 # ──────────────────  MANAGE (edit / delete)  ──────────────────
 else:
@@ -196,3 +278,16 @@ else:
     if st.button("🗑 Delete selected") and del_ids:
         run(f"delete from {tbl} where id = any(:ids)", dict(ids=tuple(del_ids)))
         st.warning(f"Deleted {len(del_ids)} rows – refresh page to update.")
+
+# ──────────────────  MOBILE-FRIENDLY SCROLLBAR  ──────────────────
+st.markdown("""
+<style>
+/* thick scrollbar pinned left (webkit only) */
+::-webkit-scrollbar { width: 14px; }
+::-webkit-scrollbar-track { background: rgba(0,0,0,0.05); }
+::-webkit-scrollbar-thumb { background: #c0c0c0; border-radius: 7px; }
+html { direction: rtl; }       /* flip scroll bar to left */
+body { direction: ltr; }       /* keep content LTR */
+</style>""", unsafe_allow_html=True)
+
+
