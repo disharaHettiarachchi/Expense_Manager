@@ -347,16 +347,22 @@ elif menu == "Dashboard":
 
 
 # ──────────────────  MANAGE (edit / delete)  ──────────────────
-else:
+else:   # menu == "Manage"
     st.subheader("🛠 Manage Entries (edit / delete)")
-    tbl = st.selectbox("Choose table", ("income","expense"))
-    df  = load_table(tbl).sort_values("date", ascending=False).reset_index(drop=True)
 
-    # Allow editing of amount & notes
+    tbl = st.selectbox("Choose table", ("income", "expense", "budget"))
+
+    df = load_table(tbl).sort_values(df.columns[0], ascending=False).reset_index(drop=True)
+
+    # column rules per table
+    if tbl == "budget":
+        disabled_cols = ["category"]       # keep category as key
+    else:
+        disabled_cols = ["id", "date", "source", "category"]
+
     edited = st.data_editor(
         df,
-        column_config={"amount_lkr":"numeric","notes":"text"},
-        disabled=["id","date","source","category"],
+        disabled=disabled_cols,
         num_rows="dynamic",
         use_container_width=True,
         key="editor"
@@ -366,15 +372,24 @@ else:
         diff = edited.compare(df)
         for idx in diff.index.unique(level=0):
             row = edited.loc[idx]
-            run(f"update {tbl} set amount_lkr=:a, notes=:n where id=:i",
-                dict(a=row["amount_lkr"], n=row["notes"], i=row["id"]))
-        st.success("Rows updated!  Reload Dashboard to see effect.")
+            if tbl == "budget":
+                run("update budget set limit_lkr=:l where category=:c",
+                    dict(l=row["limit_lkr"], c=row["category"]))
+            else:
+                run(f"update {tbl} set amount_lkr=:a, notes=:n where id=:i",
+                    dict(a=row["amount_lkr"], n=row["notes"], i=row["id"]))
+        st.success("Rows updated!")
+        st.cache_data.clear()
 
-    del_ids = st.multiselect("Select IDs to delete", df["id"])
-    if st.button("🗑 Delete selected") and del_ids:
-        # pass the raw list; let psycopg2 adapt it to a Postgres array
-        run(f"delete from {tbl} where id = any(:ids)", {"ids": del_ids})
-        st.warning(f"Deleted {len(del_ids)} rows – refresh page to update.")
+    del_key = "category" if tbl == "budget" else "id"
+    del_vals = st.multiselect(f"Select {del_key}(s) to delete", df[del_key])
+
+    if st.button("🗑 Delete selected") and del_vals:
+        run(f"delete from {tbl} where {del_key} = any(:vals)", {"vals": del_vals})
+        st.warning(f"Deleted {len(del_vals)} row(s).")
+        st.cache_data.clear()
+        st.experimental_rerun()
+
 
 
 # ──────────────────  MOBILE-FRIENDLY SCROLLBAR  ──────────────────
