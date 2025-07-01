@@ -53,6 +53,13 @@ def add_scrolling_bg(image_path, veil_opacity=.35, veil_rgb=(255,255,255)):
            background: rgba(255,255,255,0.85); border-radius:12px;
         }}
         </style>""", unsafe_allow_html=True)
+def fmt_rupees(n: float) -> str:
+    """Compact rupee formatting: 400k / 1.2 M / 950."""
+    if n >= 1_000_000:
+        return f"LKR {n/1_000_000:.1f} M"
+    if n >= 1_000:
+        return f"LKR {n/1_000:.0f} k"
+    return f"LKR {n:,.0f}"
 
 # ──────────────────  PAGE CONFIG  ──────────────────
 st.set_page_config("Wedding Expense Tracker", layout="centered")
