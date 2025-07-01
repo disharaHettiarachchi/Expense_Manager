@@ -75,10 +75,10 @@ menu = st.sidebar.radio(
 # ──────────────────  ADD INCOME  ──────────────────
 if menu == "Add Income":
     st.subheader("➕ Add Income")
-    ts        = datetime_input("Income", today)
-    amount    = st.number_input("Amount (LKR)", 0.0, step=1000.0)
-    src       = st.selectbox("Source", ("Salary","Freelance","Gift","Other"))
-    notes     = st.text_input("Notes (optional)")
+    ts     = datetime_input("Income", today)
+    amount = st.number_input("Amount (LKR)", 0.0, step=1000.0)
+    src    = st.selectbox("Source", ("Salary", "Freelance", "Gift", "Other"))
+    notes  = st.text_input("Notes (optional)")
     if st.button("Add Income") and amount > 0:
         run("insert into income (date, amount_lkr, source, notes) "
             "values (:d,:a,:s,:n)",
@@ -88,14 +88,14 @@ if menu == "Add Income":
 # ──────────────────  ADD EXPENSE  ──────────────────
 elif menu == "Add Expense":
     st.subheader("➖ Add Expense")
-    ts        = datetime_input("Expense", today)
-    amt       = st.number_input("Amount (LKR)", 0.0, step=1000.0, key="ex_amt")
-    cat       = st.text_input("Category (e.g., Groom Suit, Ring)")
-    notes     = st.text_input("Notes (optional)", key="ex_notes")
+    ts   = datetime_input("Expense", today)
+    amt  = st.number_input("Amount (LKR)", 0.0, step=1000.0)
+    cat  = st.text_input("Category (e.g., Groom Suit, Ring)")
+    note = st.text_input("Notes (optional)")
     if st.button("Add Expense") and amt > 0 and cat.strip():
         run("insert into expense (date, amount_lkr, category, notes) "
             "values (:d,:a,:c,:n)",
-            dict(d=ts, a=amt, c=cat.strip(), n=notes))
+            dict(d=ts, a=amt, c=cat.strip(), n=note))
         st.success("Expense added!")
 
 # ──────────────────  BUDGETS  ──────────────────
@@ -103,58 +103,45 @@ elif menu == "Budgets":
     st.subheader("📋 Category Budgets")
     df_bud = load_table("budget")
     st.dataframe(df_bud if not df_bud.empty else
-                 pd.DataFrame(columns=["category","limit_lkr"]))
+                 pd.DataFrame(columns=["category", "limit_lkr"]))
     st.markdown("---")
-    b_cat = st.text_input("Category")
-    b_lim = st.number_input("Limit (LKR)", 0.0, step=10000.0)
+    b_cat  = st.text_input("Category")
+    b_lim  = st.number_input("Limit (LKR)", 0.0, step=10000.0)
     if st.button("Save / Update Budget") and b_cat.strip():
         run("insert into budget (category,limit_lkr) "
-            "values (:c,:l) on conflict (category) "
-            "do update set limit_lkr=:l",
+            "values (:c,:l) on conflict (category) do update set limit_lkr=:l",
             dict(c=b_cat.strip(), l=b_lim))
         st.success("Budget saved/updated!")
-        
+
 # ──────────────────  PENDING  ──────────────────
 elif menu == "Pending":
     st.subheader("🕒 Add / Review Pending Income")
 
-    # form to add a new pledge or not-yet-liquid funds
     colD, colA = st.columns(2)
     p_date  = colD.date_input("Expected date", value=today + timedelta(days=7))
     p_amt   = colA.number_input("Amount (LKR)", 0.0, step=1000.0)
     p_src   = st.selectbox("Source", ("PayPal", "Mom", "Salary", "Other"))
-    p_notes = st.text_input("Notes (optional)")
+    p_note  = st.text_input("Notes (optional)")
     if st.button("Add pending") and p_amt > 0:
         run("insert into pending_income (expected_on, amount_lkr, source, notes) "
             "values (:d,:a,:s,:n)",
-            dict(d=p_date, a=p_amt, s=p_src, n=p_notes))
+            dict(d=p_date, a=p_amt, s=p_src, n=p_note))
         st.success("Pending income added!")
 
-    # show table
-    p_df = load_table("pending_income").sort_values(
-            ["cleared","expected_on"])
+    p_df = load_table("pending_income").sort_values(["cleared", "expected_on"])
     st.dataframe(p_df, hide_index=True, use_container_width=True)
 
-    # mark selected as cleared
     unclrd = p_df.loc[~p_df["cleared"], "id"]
-    chosen = st.multiselect("Select IDs to move to cash-in-hand", unclrd)
+    chosen = st.multiselect("Select IDs to move to Income", unclrd)
     if st.button("✅ Move to Income") and chosen:
         for pid in chosen:
-            row = p_df.loc[p_df["id"]==pid].iloc[0]
+            row = p_df.loc[p_df["id"] == pid].iloc[0]
             run("insert into income (date, amount_lkr, source, notes) "
                 "values (now(), :a, :s, :n)",
                 dict(a=row["amount_lkr"], s=row["source"], n=row["notes"]))
             run("update pending_income set cleared=true where id=:i", {"i": pid})
-        st.success(f"{len(chosen)} item(s) cleared into Income — check Dashboard!")
+        st.success(f"{len(chosen)} item(s) cleared into Income.")
 
-    # helper just above Dashboard branch
-    def fmt_rupees(n):
-        if n >= 1_000_000:
-            return f"LKR {n/1_000_000:.1f} M"
-        elif n >= 1_000:
-            return f"LKR {n/1_000:.0f} k"
-        else:
-            return f"LKR {n:,.0f}"
 
 # ──────────────────  DASHBOARD  ──────────────────
 elif menu == "Dashboard":
