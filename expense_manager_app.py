@@ -315,17 +315,52 @@ elif menu == "Dashboard":
 
 
     total_budget = df_bud["limit_lkr"].sum()
+# ----------  Funding vs Spending overview (dual stacked-bar) ----------
     if total_budget > 0:
-        remaining = max(total_budget - (bal + pending_li), 0)
-        fig_stack = go.Figure()
-        fig_stack.add_bar(name="Cash",    y=[bal])
-        fig_stack.add_bar(name="Pending", y=[pending_li])
-        fig_stack.add_bar(name="Remaining budget", y=[remaining])
-        fig_stack.update_layout(barmode="stack",
-                                title="Cash + Pending vs Budget",
-                                showlegend=True,
-                                xaxis_visible=False)
-        st.plotly_chart(fig_stack, use_container_width=True)
+        # ---- 1) Funds coverage row  --------------------------------------
+        cash      = bal                               # current positive balance
+        pending   = pending_li                        # not yet arrived
+        still_need = max(total_budget - (cash + pending), 0)
+    
+        # ---- 2) Budget usage row  ----------------------------------------
+        spent_total = tot_exp
+        remain_budget = max(total_budget - spent_total, 0)
+    
+        fig_cov = go.Figure()
+    
+        # Row 1 : Funds coverage
+        fig_cov.add_bar(name="Cash on hand",
+                        y=["Funds coverage"], x=[cash],
+                        orientation="h", marker_color="#4e79a7")
+        fig_cov.add_bar(name="Pending income",
+                        y=["Funds coverage"], x=[pending],
+                        orientation="h", marker_color="#2a628f")
+        fig_cov.add_bar(name="Still need",
+                        y=["Funds coverage"], x=[still_need],
+                        orientation="h", marker_color="#e15759")
+    
+        # Row 2 : Budget usage
+        fig_cov.add_bar(name="Spent so far",
+                        y=["Budget usage"], x=[spent_total],
+                        orientation="h", marker_color="#f28e2b")
+        fig_cov.add_bar(name="Remaining budget",
+                        y=["Budget usage"], x=[remain_budget],
+                        orientation="h", marker_color="#59a14f")
+    
+        fig_cov.update_layout(
+            barmode="stack",
+            title="Funding vs Spending overview",
+            xaxis=dict(title="LKR",
+                       tickformat=",d",
+                       range=[0, total_budget]),      # normalise both rows to 100 %
+            yaxis=dict(title="", autorange="reversed"),  # keeps Funds row on top
+            legend=dict(orientation="v", x=1.02, y=1),
+            margin=dict(l=40, r=150, t=60, b=40),
+            height=320
+        )
+    
+        st.plotly_chart(fig_cov, use_container_width=True)
+
 
     # spent vs budget
     if not df_exp.empty:
