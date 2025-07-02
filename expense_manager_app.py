@@ -193,17 +193,21 @@ elif menu == "Quick Add":
             src = data["source"]   or "Other"
             note= data["notes"]
 
-            if target == "income":
-                run("insert into income (date,amount_lkr,source,notes) "
-                    "values (:d,:a,:s,:n)",
-                    dict(d=ts, a=amt, s=src, n=note))
-            else:
-                run("insert into expense (date,amount_lkr,category,notes) "
-                    "values (:d,:a,:c,:n)",
-                    dict(d=ts, a=amt, c=cat, n=note))
+            if st.button("Save"):
+                ...
+                if target == "income":
+                    run("insert into income (date, amount_lkr, source, notes) "
+                        "values (:d,:a,:s,:n)",
+                        dict(d=ts, a=amt, s=src, n=note))
+                else:
+                    run("insert into expense (date, amount_lkr, category, notes) "
+                        "values (:d,:a,:c,:n)",
+                        dict(d=ts, a=amt, c=cat, n=note))
+            
+                st.success(f"Saved to {target}!  (LKR {amt:,.0f})")
+                st.cache_data.clear()          # ← add this
+                st.experimental_rerun()        # optional: refresh immediately
 
-            st.success(f"Saved to {target}!  (LKR {amt:,.0f})")
-            st.cache_data.clear()
 
 # ──────────────────  BUDGETS  ──────────────────
 elif menu == "Budgets":
@@ -220,6 +224,7 @@ elif menu == "Budgets":
             dict(c=b_cat.strip(), l=b_lim))
         st.success("Budget saved/updated!")
 
+# ──────────────────  PENDING  ──────────────────
 elif menu == "Pending":
     st.subheader("🕒 Add / Review Pending Income")
     with st.form("pending_form"):
