@@ -367,42 +367,42 @@ elif menu == "Dashboard":
             st.plotly_chart(fig3, use_container_width=True)
 
 # ----------  Expense-breakdown donut ----------
-if not df_exp.empty:
-    # 1) aggregate spend per category
-    cat_tot = (
-        df_exp.groupby("category")["amount_lkr"]
-        .sum()
-        .sort_values(ascending=False)        # biggest first
-    )
-
-    # 2) OPTIONAL – merge very small slices into “Other”
-    tail_threshold = 0.05 * cat_tot.sum()    # <5 % of total
-    small_sum      = cat_tot[cat_tot < tail_threshold].sum()
-    cat_tot        = cat_tot[cat_tot >= tail_threshold]
-    if small_sum > 0:
-        cat_tot.loc["Other"] = small_sum
-
-    # 3) colour palette – warm for the top 3, cool blues for the rest
-    warm  = ["#ff7f0e", "#ff6361", "#ffa600"]          # orange family
-    blues = ["#4e79a7", "#59a14f", "#8cd17d",
-             "#76b7b2", "#9c755f", "#e15759"]          # fallback colours
-    colors = warm + blues
-    colors = colors[: len(cat_tot)]                    # trim to length
-
-    # 4) draw donut
-    fig_donut = go.Figure(
-        go.Pie(
-            labels      = cat_tot.index,
-            values      = cat_tot.values,
-            hole        = 0.45,
-            marker      = dict(colors=colors),
-            sort        = False,                       # keep our order
-            textinfo    = "label+percent",
-            texttemplate= "%{label}<br>%{percent:.1%}<br>(LKR %{value:,.0f})",
+    if not df_exp.empty:
+        # 1) aggregate spend per category
+        cat_tot = (
+            df_exp.groupby("category")["amount_lkr"]
+            .sum()
+            .sort_values(ascending=False)        # biggest first
         )
-    )
-    fig_donut.update_layout(title="Expense breakdown by category")
-    st.plotly_chart(fig_donut, use_container_width=True)
+    
+        # 2) OPTIONAL – merge very small slices into “Other”
+        tail_threshold = 0.05 * cat_tot.sum()    # <5 % of total
+        small_sum      = cat_tot[cat_tot < tail_threshold].sum()
+        cat_tot        = cat_tot[cat_tot >= tail_threshold]
+        if small_sum > 0:
+            cat_tot.loc["Other"] = small_sum
+    
+        # 3) colour palette – warm for the top 3, cool blues for the rest
+        warm  = ["#ff7f0e", "#ff6361", "#ffa600"]          # orange family
+        blues = ["#4e79a7", "#59a14f", "#8cd17d",
+                 "#76b7b2", "#9c755f", "#e15759"]          # fallback colours
+        colors = warm + blues
+        colors = colors[: len(cat_tot)]                    # trim to length
+    
+        # 4) draw donut
+        fig_donut = go.Figure(
+            go.Pie(
+                labels      = cat_tot.index,
+                values      = cat_tot.values,
+                hole        = 0.45,
+                marker      = dict(colors=colors),
+                sort        = False,                       # keep our order
+                textinfo    = "label+percent",
+                texttemplate= "%{label}<br>%{percent:.1%}<br>(LKR %{value:,.0f})",
+            )
+        )
+        fig_donut.update_layout(title="Expense breakdown by category")
+        st.plotly_chart(fig_donut, use_container_width=True)
 
 
 # ──────────────────  MANAGE (edit / delete)  ──────────────────
