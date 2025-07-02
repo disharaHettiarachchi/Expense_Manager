@@ -104,8 +104,8 @@ st.metric("⏳ Days until wedding", f"{max((wedding_day-today).days-1,0)} days")
 # ──────────────────  MENU  ──────────────────
 menu = st.sidebar.radio(
     "Menu",
-    ("Add Income", "Add Expense", "Budgets",
-     "Dashboard", "Manage", "Pending") 
+    ("Dashboard","Add Income", "Add Expense", "Budgets",
+      "Manage", "Pending") 
 )
 
 
@@ -245,7 +245,7 @@ elif menu == "Dashboard":
 
         ledger["balance"] = ledger["delta"].cumsum()
 
-        # ---------- 1. Burn-down gauge ----------
+        # ---------- Burn-down gauge ----------
         total_budget = df_bud["limit_lkr"].sum() or 1   # avoid ÷0
         spent_pct    = min(ledger["balance"].iloc[-1] * -1 / total_budget * 100, 100)
         fig_g = go.Figure(go.Indicator(
@@ -264,7 +264,7 @@ elif menu == "Dashboard":
         ))
         st.plotly_chart(fig_g, use_container_width=True)
 
-        # ---------- 2. Stair-step running balance ----------
+        # ---------- Stair-step running balance ----------
         fig2 = go.Figure()
         fig2.add_scatter(x=ledger["date"], y=ledger["balance"],
                          mode="lines+markers", line_shape="hv",
@@ -273,7 +273,7 @@ elif menu == "Dashboard":
                            xaxis_title="Date / Time", yaxis_title="LKR")
         st.plotly_chart(fig2, use_container_width=True)
 
-        # ---------- 3. Daily cash-in / cash-out bars ----------
+        # ---------- Daily cash-in / cash-out bars ----------
         daily = (ledger.groupby(ledger["date"].dt.date)["delta"]
                  .agg(received=lambda s: s[s>0].sum(),
                       spent   =lambda s: -s[s<0].sum())
@@ -289,20 +289,7 @@ elif menu == "Dashboard":
                                xaxis_title="Day", yaxis_title="LKR")
             st.plotly_chart(fig3, use_container_width=True)
 
-        # ---------- 4. Calendar heat-map of spend ----------
-        cal = daily.copy()
-        cal["day"] = pd.to_datetime(cal["day"])
-        heat = go.Figure(go.Heatmap(
-                x=cal["day"],
-                y=["Spent"]*len(cal),
-                z=cal["spent"],
-                colorscale="Reds",
-                showscale=False))
-        heat.update_layout(title="Spend intensity calendar",
-                           xaxis_nticks=35, yaxis_visible=False)
-        st.plotly_chart(heat, use_container_width=True)
-
-        # ---------- 5. Budget-compliance pie ----------
+        # ---------- Budget-compliance pie ----------
         spent_by_cat = df_exp.groupby("category")["amount_lkr"].sum()
         merged = pd.concat([spent_by_cat,
                             df_bud.set_index("category")["limit_lkr"]],
@@ -318,33 +305,6 @@ elif menu == "Dashboard":
                                        hole=.4)])
         fig_p.update_layout(title="Budget compliance")
         st.plotly_chart(fig_p, use_container_width=True)
-
-        # ---------- 6. Cash-flow forecast ----------
-        horizon = datetime(2025,8,16)      # 7 days before wedding
-        if len(ledger) >= 2:
-            days = (ledger["date"] - ledger["date"].min()).dt.total_seconds()/86400
-            coef = pd.Series(days).corr(ledger["balance"])   # simple slope sign
-            slope = (ledger["balance"].iloc[-1]-
-                     ledger["balance"].iloc[0]) / max(days.iloc[-1],1)
-            future_days = (horizon - ledger["date"].iloc[-1].to_pydatetime()).days
-            forecast    = ledger["balance"].iloc[-1] + slope*future_days
-            fig_f = go.Figure()
-            fig_f.add_scatter(x=ledger["date"], y=ledger["balance"],
-                              mode="lines", name="Actual")
-            fig_f.add_scatter(x=[ledger["date"].iloc[-1], horizon],
-                              y=[ledger["balance"].iloc[-1], forecast],
-                              mode="lines", name="Forecast",
-                              line=dict(dash="dash"))
-            fig_f.update_layout(title="Balance forecast (linear)",
-                                xaxis_title="Date", yaxis_title="LKR")
-            st.plotly_chart(fig_f, use_container_width=True)
-
-        # ---------- 7. Top-5 expense table ----------
-        top5 = (df_exp.sort_values("amount_lkr", ascending=False)
-                 .head(5)[["id","date","category","amount_lkr","notes"]])
-        st.subheader("💸 Top-5 expenses so far")
-        st.dataframe(top5, hide_index=True, use_container_width=True)
-
 
 # ──────────────────  MANAGE (edit / delete)  ──────────────────
 else:   # menu == "Manage"
