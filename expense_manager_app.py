@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 import base64
 from zoneinfo import ZoneInfo 
+from openai import OpenAI
 
 # ──────────────────  DB CONNECTION  ──────────────────
 engine = create_engine(
@@ -22,8 +23,30 @@ with warnings.catch_warnings():
         st.success("Wedding of Himashi & Dishara!")
     except Exception as e:
         st.error(e)
+        
+#OpenAI Key
+client = OpenAI(api_key=st.secrets["api"]["openai"])
+
+SYSTEM_PROMPT = """
+You are an assistant that extracts structured payment info
+from user free-text. Output JSON with keys:
+date (YYYY-MM-DD or empty), time (HH:MM or empty),
+amount_lkr (number), category, source, notes.
+"""
 
 # ──────────────────  HELPERS  ──────────────────
+def nlp_extract(text: str) -> dict:
+    resp = client.chat.completions.create(
+        model="gpt-4o-mini",   # or gpt-3.5-turbo
+        temperature=0.0,
+        messages=[
+          {"role":"system", "content": SYSTEM_PROMPT},
+          {"role":"user",   "content": text}
+        ]
+    )
+    import json
+    return json.loads(resp.choices[0].message.content)
+
 def run(query, params=None, fetch=False):
     with engine.begin() as conn:
         res = conn.execute(text(query), params or {})
@@ -104,7 +127,7 @@ st.metric("⏳ Days until wedding", f"{max((wedding_day-today).days-1,0)} days")
 # ──────────────────  MENU  ──────────────────
 menu = st.sidebar.radio(
     "Menu",
-    ("Dashboard","Add Income", "Add Expense", "Budgets",
+    ("Dashboard", "Quick Add", "Add Income", "Add Expense", "Budgets",
       "Manage", "Pending") 
 )
 
@@ -141,7 +164,46 @@ elif menu == "Add Expense":
                 dict(d=ts, a=amt, c=cat.strip(), n=note))
             st.success("Expense added!")
             st.cache_data.clear()
+            
+# ──────────────────  ADD Quick Add  ──────────────────
+elif menu == "Quick Add":
+    st.subheader("🤖 Quick Add (free-text)")
 
+    raw = st.text_area(
+        "Describe the transaction (e.g. “Paid photographer 75 000 yesterday 3 pm”)",
+        height=120
+    )
+    if st.button("Parse & Add") and raw.strip():
+        with st.spinner("Let me think…"):
+            data = nlp_extract(raw)
+
+        # show parsed preview
+        st.json(data, expanded=False)
+
+        # choose which table
+        target = st.radio("Save as", ("income", "expense"))
+
+        if st.button("Save"):
+            # fill defaults
+            dt = data["date"] or date.today().isoformat()
+            tm = data["time"] or "12:00"
+            ts = datetime.fromisoformat(f"{dt} {tm}")
+            amt = float(data["amount_lkr"] or 0)
+            cat = data["category"] or "Other"
+            src = data["source"]   or "Other"
+            note= data["notes"]
+
+            if target == "income":
+                run("insert into income (date,amount_lkr,source,notes) "
+                    "values (:d,:a,:s,:n)",
+                    dict(d=ts, a=amt, s=src, n=note))
+            else:
+                run("insert into expense (date,amount_lkr,category,notes) "
+                    "values (:d,:a,:c,:n)",
+                    dict(d=ts, a=amt, c=cat, n=note))
+
+            st.success(f"Saved to {target}!  (LKR {amt:,.0f})")
+            st.cache_data.clear()
 
 # ──────────────────  BUDGETS  ──────────────────
 elif menu == "Budgets":
