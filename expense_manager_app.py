@@ -354,7 +354,8 @@ elif menu == "Dashboard":
 
         # ---------- Burn-down gauge ----------
         total_budget = df_bud["limit_lkr"].sum() or 1   # avoid ÷0
-        spent_pct    = min(ledger["balance"].iloc[-1] * -1 / total_budget * 100, 100)
+        spent_abs  = ledger.loc[ledger["delta"] < 0, "delta"].abs().sum()
+        spent_pct  = min(spent_abs / total_budget * 100, 100)
         fig_g = go.Figure(go.Indicator(
             mode="gauge+number",
             value=spent_pct,
