@@ -183,16 +183,21 @@ elif menu == "Pending":
         for pid in chosen:
             row = p_df.loc[p_df["id"] == pid].iloc[0]
         
-            # convert NaN to None so psycopg2 can send NULL
-            src  = None if pd.isna(row["source"]) else row["source"]
-            note = None if pd.isna(row["notes"])  else row["notes"]
+            # ── clean every field ───────────────────────────
+            amt  = 0.0 if pd.isna(row["amount_lkr"]) else float(row["amount_lkr"])
+            src  = ""  if pd.isna(row["source"])     else str(row["source"])
+            note = ""  if pd.isna(row["notes"])      else str(row["notes"])
         
-            run(
-                "insert into income (date, amount_lkr, source, notes) "
-                "values (now(), :a, :s, :n)",
-                dict(a=row["amount_lkr"], s=src, n=note)     # ← use cleaned values
-            )
-            run("update pending_income set cleared=true where id=:i", {"i": pid})
+            try:
+                run(
+                    "insert into income (date, amount_lkr, source, notes) "
+                    "values (now(), :a, :s, :n)",
+                    dict(a=amt, s=src, n=note)
+                )
+                run("update pending_income set cleared=true where id=:i", {"i": pid})
+            except Exception as e:
+                st.error(f"Couldn’t move ID {pid}: {e}")
+                continue  # move on to next selection
 
         st.success(f"{len(chosen)} item(s) cleared into Income.")
 
