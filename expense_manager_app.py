@@ -315,52 +315,79 @@ elif menu == "Dashboard":
 
 
     total_budget = df_bud["limit_lkr"].sum()
-# ----------  Funding vs Spending overview (dual stacked-bar) ----------
+
+# ----------  Funding vs Spending overview (robust version) ----------
     if total_budget > 0:
-        # ---- 1) Funds coverage row  --------------------------------------
-        cash      = bal                               # current positive balance
-        pending   = pending_li                        # not yet arrived
-        still_need = max(total_budget - (cash + pending), 0)
+        # -------  amounts ----------
+        cash          = max(bal, 0)                 # current bank
+        pending       = max(pending_li, 0)
+        funds_total   = cash + pending
     
-        # ---- 2) Budget usage row  ----------------------------------------
-        spent_total = tot_exp
+        spent_total   = max(tot_exp, 0)
+    
+        # -------  compare to budget ----------
+        still_need   = max(total_budget - funds_total, 0)
+        surplus      = max(funds_total - total_budget, 0)
+    
         remain_budget = max(total_budget - spent_total, 0)
+        over_budget   = max(spent_total - total_budget, 0)
+    
+        # -------  ensure every slice shows up (≥ tiny) ----------
+        tiny = 1e-6
+        for var in ("cash","pending","still_need","surplus",
+                    "remain_budget","spent_total","over_budget"):
+            locals()[var] = locals()[var] or tiny
+    
+        # -------  dynamic x-axis range ----------
+        x_max = max(total_budget, funds_total, spent_total)
     
         fig_cov = go.Figure()
     
-        # Row 1 : Funds coverage
-        fig_cov.add_bar(name="Cash on hand",
-                        y=["Funds coverage"], x=[cash],
-                        orientation="h", marker_color="#4e79a7")
-        fig_cov.add_bar(name="Pending income",
-                        y=["Funds coverage"], x=[pending],
-                        orientation="h", marker_color="#2a628f")
-        fig_cov.add_bar(name="Still need",
-                        y=["Funds coverage"], x=[still_need],
-                        orientation="h", marker_color="#e15759")
+        # Row 1 – Funds coverage
+        fig_cov.add_bar(y=["Funds coverage"], x=[cash],
+                        name="Cash on hand", orientation="h",
+                        marker_color="#4e79a7",
+                        texttemplate="%{x:,.0f}", textposition="inside")
+        fig_cov.add_bar(y=["Funds coverage"], x=[pending],
+                        name="Pending income", orientation="h",
+                        marker_color="#2a628f",
+                        texttemplate="%{x:,.0f}", textposition="inside")
+        fig_cov.add_bar(y=["Funds coverage"], x=[still_need],
+                        name="Still need", orientation="h",
+                        marker_color="#e15759",
+                        texttemplate="%{x:,.0f}", textposition="inside")
+        fig_cov.add_bar(y=["Funds coverage"], x=[surplus],
+                        name="Surplus (> budget)", orientation="h",
+                        marker_color="#9c755f",
+                        texttemplate="%{x:,.0f}", textposition="inside")
     
-        # Row 2 : Budget usage
-        fig_cov.add_bar(name="Spent so far",
-                        y=["Budget usage"], x=[spent_total],
-                        orientation="h", marker_color="#f28e2b")
-        fig_cov.add_bar(name="Remaining budget",
-                        y=["Budget usage"], x=[remain_budget],
-                        orientation="h", marker_color="#59a14f")
+        # Row 2 – Budget usage
+        fig_cov.add_bar(y=["Budget usage"], x=[spent_total],
+                        name="Spent so far", orientation="h",
+                        marker_color="#f28e2b",
+                        texttemplate="%{x:,.0f}", textposition="inside")
+        fig_cov.add_bar(y=["Budget usage"], x=[remain_budget],
+                        name="Remaining budget", orientation="h",
+                        marker_color="#59a14f",
+                        texttemplate="%{x:,.0f}", textposition="inside")
+        fig_cov.add_bar(y=["Budget usage"], x=[over_budget],
+                        name="Over budget", orientation="h",
+                        marker_color="#d7263d",
+                        texttemplate="%{x:,.0f}", textposition="inside")
     
         fig_cov.update_layout(
             barmode="stack",
             title="Funding vs Spending overview",
-            xaxis=dict(title="LKR",
-                       tickformat=",d",
-                       range=[0, total_budget]),      # normalise both rows to 100 %
-            yaxis=dict(title="", autorange="reversed"),  # keeps Funds row on top
+            xaxis=dict(title="LKR", tickformat=",d", range=[0, x_max]),
+            yaxis=dict(title="", autorange="reversed"),
             legend=dict(orientation="v", x=1.02, y=1),
-            margin=dict(l=40, r=150, t=60, b=40),
-            height=320
+            margin=dict(l=40, r=160, t=60, b=40),
+            height=340
         )
     
         st.plotly_chart(fig_cov, use_container_width=True)
-
+    
+    
 
     # spent vs budget
     if not df_exp.empty:
