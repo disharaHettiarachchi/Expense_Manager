@@ -399,19 +399,32 @@ elif menu == "Dashboard":
 
         # ---------- Budget-compliance pie ----------
         spent_by_cat = df_exp.groupby("category")["amount_lkr"].sum()
-        merged = pd.concat([spent_by_cat,
-                            df_bud.set_index("category")["limit_lkr"]],
-                           axis=1, join="inner").fillna(0)
+        
+        merged = (df_bud.set_index("category")       # all categories with a budget
+                    .join(spent_by_cat, how="left")  # keep even if spent = NaN
+                    .fillna({"amount_lkr": 0}))      # replace NaN with 0
+        merged.rename(columns={"amount_lkr": "spent"}, inplace=True)
+
         def bucket(row):
-            pct = row["amount_lkr"] / row["limit_lkr"] * 100 if row["limit_lkr"] else 0
-            if pct < 80:      return "Under 80%"
-            elif pct <=100:   return "80-100%"
-            else:             return "Over"
-        merged["buck"] = merged.apply(bucket, axis=1)
-        pie_df = merged["buck"].value_counts()
-        fig_p = go.Figure(data=[go.Pie(labels=pie_df.index, values=pie_df.values,
-                                       hole=.4)])
-        fig_p.update_layout(title="Budget compliance")
+            if row["limit_lkr"] == 0:          # safeguard against /0
+                return "No budget"
+            pct = row["spent"] / row["limit_lkr"] * 100
+            if   pct < 80:  return "Under 80%"
+            elif pct <=100: return "80-100%"
+            else:           return "Over"
+        
+        merged["bucket"] = merged.apply(bucket, axis=1)
+        pie_df = merged["bucket"].value_counts().sort_index()
+
+        colors = {"Under 80%":"lightgreen", "80-100%":"orange",
+                  "Over":"red", "No budget":"lightgrey"}
+        
+        fig_p = go.Figure(go.Pie(
+                labels  = pie_df.index,
+                values  = pie_df.values,
+                hole    = .4,
+                marker  = dict(colors=[colors[b] for b in pie_df.index])))
+        fig_p.update_layout(title="Budget compliance by category")
         st.plotly_chart(fig_p, use_container_width=True)
 
 # ──────────────────  MANAGE (edit / delete)  ──────────────────
