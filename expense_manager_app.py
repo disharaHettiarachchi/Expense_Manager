@@ -170,43 +170,53 @@ elif menu == "Quick Add":
     st.subheader("🤖 Quick Add (free-text)")
 
     raw = st.text_area(
-        "Describe the transaction (e.g. “Paid photographer 75 000 yesterday 3 pm”)",
-        height=120
+        "Describe the transaction "
+        "(e.g. “Paid photographer 75 000 yesterday 3 pm”)",
+        height=120,
+        key="qa_raw",
     )
-    if st.button("Parse & Add") and raw.strip():
-        with st.spinner("Let me think…"):
-            data = nlp_extract(raw)
 
-        # show parsed preview
+    # keep parsed result across reruns
+    if "qa_parsed" not in st.session_state:
+        st.session_state.qa_parsed = None
+
+    # 1️⃣  Parse
+    if st.button("🔍 Parse") and raw.strip():
+        with st.spinner("Let me think…"):
+            st.session_state.qa_parsed = nlp_extract(raw)
+        st.success("Parsed!  Review below & hit Save")
+
+    # 2️⃣  Show preview and let user confirm
+    if st.session_state.qa_parsed:
+        data = st.session_state.qa_parsed
         st.json(data, expanded=False)
 
-        # choose which table
-        target = st.radio("Save as", ("income", "expense"))
+        target = st.radio("Save as", ("expense", "income"), horizontal=True)
 
-        if st.button("Save"):
-            # fill defaults
+        if st.button("💾 Save to database"):
+            # ── fill defaults & clean types ──────────────
             dt = data["date"] or date.today().isoformat()
             tm = data["time"] or "12:00"
             ts = datetime.fromisoformat(f"{dt} {tm}")
-            amt = float(data["amount_lkr"] or 0)
-            cat = data["category"] or "Other"
-            src = data["source"]   or "Other"
-            note= data["notes"]
+            amt = float(data.get("amount_lkr", 0) or 0)
+            cat = (data.get("category") or "Other").title()
+            src = (data.get("source")   or "Other").title()
+            note=  data.get("notes", "")
 
-            if st.button("Save"):
-                ...
-                if target == "income":
-                    run("insert into income (date, amount_lkr, source, notes) "
-                        "values (:d,:a,:s,:n)",
-                        dict(d=ts, a=amt, s=src, n=note))
-                else:
-                    run("insert into expense (date, amount_lkr, category, notes) "
-                        "values (:d,:a,:c,:n)",
-                        dict(d=ts, a=amt, c=cat, n=note))
-            
-                st.success(f"Saved to {target}!  (LKR {amt:,.0f})")
-                st.cache_data.clear()          # ← add this
-                st.experimental_rerun()        # optional: refresh immediately
+            if target == "income":
+                run("""insert into income (date, amount_lkr, source, notes)
+                       values (:d, :a, :s, :n)""",
+                    dict(d=ts, a=amt, s=src, n=note))
+            else:
+                run("""insert into expense (date, amount_lkr, category, notes)
+                       values (:d, :a, :c, :n)""",
+                    dict(d=ts, a=amt, c=cat, n=note))
+
+            st.success(f"Added {target}: LKR {amt:,.0f}")
+            st.cache_data.clear()
+            st.session_state.qa_parsed = None        # reset form
+            st.session_state.qa_raw    = ""          # clear textarea
+            st.experimental_rerun()
 
 
 # ──────────────────  BUDGETS  ──────────────────
