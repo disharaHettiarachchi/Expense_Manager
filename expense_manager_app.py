@@ -116,7 +116,7 @@ def load_table(tbl):
 
 # ──────────────────  PAGE CONFIG  ──────────────────
 st.set_page_config("Wedding Expense Tracker", layout="centered")
-add_scrolling_bg("assets/wedding_bg.jpg", veil_opacity=.05)
+add_scrolling_bg("assets/wedding_bg.jpg", veil_opacity=.25)
 
 st.title("💍 Wedding Expense & Income Tracker")
 
