@@ -180,13 +180,13 @@ elif menu == "Quick Add":
     if "qa_parsed" not in st.session_state:
         st.session_state.qa_parsed = None
 
-    # 1️⃣  Parse
+    # 1️⃣ Parse
     if st.button("🔍 Parse") and raw.strip():
         with st.spinner("Let me think…"):
             st.session_state.qa_parsed = nlp_extract(raw)
         st.success("Parsed!  Review below & hit Save")
 
-    # 2️⃣  Show preview and let user confirm
+    # 2️⃣ Preview + confirm
     if st.session_state.qa_parsed:
         data = st.session_state.qa_parsed
         st.json(data, expanded=False)
@@ -194,15 +194,30 @@ elif menu == "Quick Add":
         target = st.radio("Save as", ("expense", "income"), horizontal=True)
 
         if st.button("💾 Save to database"):
-            # ── fill defaults & clean types ──────────────
-            dt = data["date"] or date.today().isoformat()
-            tm = data["time"] or "12:00"
-            ts = datetime.fromisoformat(f"{dt} {tm}")
-            amt = float(data.get("amount_lkr", 0) or 0)
+
+            # ── clean / validate ───────────────────────────
+            #  ⬩ date fallback: if year < current → today
+            dt_txt = data.get("date") or ""
+            if len(dt_txt) == 10:        # YYYY-MM-DD
+                yr = int(dt_txt[:4])
+                if yr < date.today().year:
+                    dt_txt = ""
+            if not dt_txt:
+                dt_txt = date.today().isoformat()
+
+            #  ⬩ time fallback
+            tm_txt = data.get("time") or "12:00"
+
+            ts = datetime.fromisoformat(f"{dt_txt} {tm_txt}")
+
+            amt = float(data.get("amount_lkr") or 0)
             cat = (data.get("category") or "Other").title()
             src = (data.get("source")   or "Other").title()
-            note=  data.get("notes", "")
 
+            #  ⬩ note = model note or full raw text
+            note = data.get("notes") or raw
+
+            # ── insert ─────────────────────────────────────
             if target == "income":
                 run("""insert into income (date, amount_lkr, source, notes)
                        values (:d, :a, :s, :n)""",
@@ -213,9 +228,11 @@ elif menu == "Quick Add":
                     dict(d=ts, a=amt, c=cat, n=note))
 
             st.success(f"Added {target}: LKR {amt:,.0f}")
+
+            # housekeeping
             st.cache_data.clear()
-            st.session_state.qa_parsed = None        # reset form
-            st.session_state.qa_raw    = ""          # clear textarea
+            st.session_state.qa_parsed = None   # ← DO clear this
+            # DO NOT reset qa_raw (widget key) → avoids StreamlitAPIException
             st.experimental_rerun()
 
 
