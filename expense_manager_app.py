@@ -25,7 +25,7 @@ with warnings.catch_warnings():
         st.error(e)
         
 #OpenAI Key
-client = OpenAI(api_key=st.secrets["api"]["openai"])
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 SYSTEM_PROMPT = """
 You are an assistant that extracts structured payment info
