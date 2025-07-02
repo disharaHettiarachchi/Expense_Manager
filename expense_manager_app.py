@@ -352,26 +352,6 @@ elif menu == "Dashboard":
 
         ledger["balance"] = ledger["delta"].cumsum()
 
-        # ---------- Burn-down gauge ----------
-        total_budget = df_bud["limit_lkr"].sum() or 1   # avoid ÷0
-        spent_abs  = ledger.loc[ledger["delta"] < 0, "delta"].abs().sum()
-        spent_pct  = min(spent_abs / total_budget * 100, 100)
-        fig_g = go.Figure(go.Indicator(
-            mode="gauge+number",
-            value=spent_pct,
-            number={"suffix":"%"},
-            title={"text":"% of Budget Spent"},
-            gauge={
-                "axis":{"range":[0,100]},
-                "bar":{"color":"red"},
-                "steps":[
-                    {"range":[0,80],"color":"lightgreen"},
-                    {"range":[80,100],"color":"orange"}
-                ]
-            }
-        ))
-        st.plotly_chart(fig_g, use_container_width=True)
-
         # ---------- Stair-step running balance ----------
         fig2 = go.Figure()
         fig2.add_scatter(x=ledger["date"], y=ledger["balance"],
@@ -397,35 +377,44 @@ elif menu == "Dashboard":
                                xaxis_title="Day", yaxis_title="LKR")
             st.plotly_chart(fig3, use_container_width=True)
 
-        # ---------- Budget-compliance pie ----------
-        spent_by_cat = df_exp.groupby("category")["amount_lkr"].sum()
-        
-        merged = (df_bud.set_index("category")       # all categories with a budget
-                    .join(spent_by_cat, how="left")  # keep even if spent = NaN
-                    .fillna({"amount_lkr": 0}))      # replace NaN with 0
-        merged.rename(columns={"amount_lkr": "spent"}, inplace=True)
+# ----------  Expense-breakdown donut ----------
+if not df_exp.empty:
+    # 1) aggregate spend per category
+    cat_tot = (
+        df_exp.groupby("category")["amount_lkr"]
+        .sum()
+        .sort_values(ascending=False)        # biggest first
+    )
 
-        def bucket(row):
-            if row["limit_lkr"] == 0:          # safeguard against /0
-                return "No budget"
-            pct = row["spent"] / row["limit_lkr"] * 100
-            if   pct < 80:  return "Under 80%"
-            elif pct <=100: return "80-100%"
-            else:           return "Over"
-        
-        merged["bucket"] = merged.apply(bucket, axis=1)
-        pie_df = merged["bucket"].value_counts().sort_index()
+    # 2) OPTIONAL – merge very small slices into “Other”
+    tail_threshold = 0.05 * cat_tot.sum()    # <5 % of total
+    small_sum      = cat_tot[cat_tot < tail_threshold].sum()
+    cat_tot        = cat_tot[cat_tot >= tail_threshold]
+    if small_sum > 0:
+        cat_tot.loc["Other"] = small_sum
 
-        colors = {"Under 80%":"lightgreen", "80-100%":"orange",
-                  "Over":"red", "No budget":"lightgrey"}
-        
-        fig_p = go.Figure(go.Pie(
-                labels  = pie_df.index,
-                values  = pie_df.values,
-                hole    = .4,
-                marker  = dict(colors=[colors[b] for b in pie_df.index])))
-        fig_p.update_layout(title="Budget compliance by category")
-        st.plotly_chart(fig_p, use_container_width=True)
+    # 3) colour palette – warm for the top 3, cool blues for the rest
+    warm  = ["#ff7f0e", "#ff6361", "#ffa600"]          # orange family
+    blues = ["#4e79a7", "#59a14f", "#8cd17d",
+             "#76b7b2", "#9c755f", "#e15759"]          # fallback colours
+    colors = warm + blues
+    colors = colors[: len(cat_tot)]                    # trim to length
+
+    # 4) draw donut
+    fig_donut = go.Figure(
+        go.Pie(
+            labels      = cat_tot.index,
+            values      = cat_tot.values,
+            hole        = 0.45,
+            marker      = dict(colors=colors),
+            sort        = False,                       # keep our order
+            textinfo    = "label+percent",
+            texttemplate= "%{label}<br>%{percent:.1%}<br>(LKR %{value:,.0f})",
+        )
+    )
+    fig_donut.update_layout(title="Expense breakdown by category")
+    st.plotly_chart(fig_donut, use_container_width=True)
+
 
 # ──────────────────  MANAGE (edit / delete)  ──────────────────
 else:   # menu == "Manage"
