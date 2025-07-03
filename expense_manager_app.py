@@ -8,6 +8,17 @@ import base64
 from zoneinfo import ZoneInfo 
 from openai import OpenAI
 
+# ─────────────  BRIDE ↔ GROOM profile picker  ─────────────
+if "profile" not in st.session_state:
+    st.title("Select Bride Or Groom")
+    colG, colB = st.columns(2)
+    if colG.button("🤵 Groom", use_container_width=True):
+        st.session_state.profile = "groom"; st.experimental_rerun()
+    if colB.button("👰 Bride", use_container_width=True):
+        st.session_state.profile = "bride"; st.experimental_rerun()
+    st.stop()                            # wait until a choice is made
+profile = st.session_state.profile       # 'groom' or 'bride'
+
 # ──────────────────  DB CONNECTION  ──────────────────
 engine = create_engine(
     st.secrets["DATABASE_URL"],
@@ -47,13 +58,19 @@ def nlp_extract(text: str) -> dict:
     import json
     return json.loads(resp.choices[0].message.content)
 
-def run(query, params=None, fetch=False):
+### ――― DB helpers, now profile-aware ―――
+def run(query: str, params: dict | None = None, fetch: bool = False):
+    """Executes SQL and autoplugs :w => profile if the text contains `who`."""
+    params = params or {}
+    if ":w" in query or " who " in query.lower():
+        params["w"] = profile
     with engine.begin() as conn:
-        res = conn.execute(text(query), params or {})
-        return res.fetchall() if fetch else None
+        rows = conn.execute(text(query), params)
+        return rows.fetchall() if fetch else None
 
-def load_table(tbl):
-    return pd.read_sql(f"select * from {tbl}", engine)
+def load_table(tbl: str) -> pd.DataFrame:
+    return pd.read_sql(f"select * from {tbl} where who = :w",
+                       engine, params=dict(w=profile))
 
 def datetime_input(
         label: str,
@@ -130,6 +147,10 @@ menu = st.sidebar.radio(
     ("Dashboard", "Quick Add", "Add Income", "Add Expense", "Budgets",
       "Manage", "Pending") 
 )
+st.sidebar.markdown(f"**Profile:** `{profile}`")
+if st.sidebar.button("Switch profile"):
+    del st.session_state.profile
+    st.experimental_rerun()
 
 
 # ──────────────────  ADD INCOME  ──────────────────
@@ -142,9 +163,9 @@ if menu == "Add Income":
         notes  = st.text_input("Notes (optional)", key="inc_note")
         submitted = st.form_submit_button("Add Income")
         if submitted and amount > 0:
-            run("insert into income (date, amount_lkr, source, notes) "
-                "values (:d,:a,:s,:n)",
-                dict(d=ts, a=amount, s=src, n=notes))
+            run("insert into income (date, amount_lkr, source, notes, who) "
+                "values (:d,:a,:s,:n,:w)",
+                dict(d=ts, a=amount, s=src, n=notes, w=profile))
             st.success("Income added!")
             st.cache_data.clear()        # invalidate cached tables
 
@@ -159,9 +180,9 @@ elif menu == "Add Expense":
         note = st.text_input("Notes (optional)", key="exp_note")
         submitted = st.form_submit_button("Add Expense")
         if submitted and amt > 0 and cat.strip():
-            run("insert into expense (date, amount_lkr, category, notes) "
-                "values (:d,:a,:c,:n)",
-                dict(d=ts, a=amt, c=cat.strip(), n=note))
+            run("insert into expense (date, amount_lkr, category, notes, who) "
+                "values (:d,:a,:c,:n,:w)",
+                dict(d=ts, a=amt, c=cat.strip(), n=note, w=profile))
             st.success("Expense added!")
             st.cache_data.clear()
             
@@ -219,13 +240,13 @@ elif menu == "Quick Add":
 
             # ── insert ─────────────────────────────────────
             if target == "income":
-                run("""insert into income (date, amount_lkr, source, notes)
-                       values (:d, :a, :s, :n)""",
-                    dict(d=ts, a=amt, s=src, n=note))
+                run("""insert into income (date, amount_lkr, source, notes, who)
+                       values (:d, :a, :s, :n, :w)""",
+                    dict(d=ts, a=amt, s=src, n=note, w=profile))
             else:
-                run("""insert into expense (date, amount_lkr, category, notes)
-                       values (:d, :a, :c, :n)""",
-                    dict(d=ts, a=amt, c=cat, n=note))
+                run("""insert into expense (date, amount_lkr, category, notes, who)
+                       values (:d, :a, :c, :n, :w)""",
+                    dict(d=ts, a=amt, c=cat, n=note, w=profile))
 
             st.success(f"Added {target}: LKR {amt:,.0f}")
 
@@ -246,8 +267,8 @@ elif menu == "Budgets":
     b_cat  = st.text_input("Category")
     b_lim  = st.number_input("Limit (LKR)", 0.0, step=10000.0)
     if st.button("Save / Update Budget") and b_cat.strip():
-        run("insert into budget (category,limit_lkr) "
-            "values (:c,:l) on conflict (category) do update set limit_lkr=:l",
+        run("insert into budget (category,limit_lkr,who) "
+            "values (:c,:l,:w) on conflict (category,who) do update set limit_lkr=:l",
             dict(c=b_cat.strip(), l=b_lim))
         st.success("Budget saved/updated!")
 
@@ -262,8 +283,8 @@ elif menu == "Pending":
         p_note  = st.text_input("Notes (optional)")
         submitted = st.form_submit_button("Add pending")
         if submitted and p_amt > 0:
-            run("insert into pending_income (expected_on, amount_lkr, source, notes) "
-                "values (:d,:a,:s,:n)",
+            run("insert into pending_income (expected_on, amount_lkr, source, notes, who) "
+                "values (:d,:a,:s,:n,:w)",
                 dict(d=p_date, a=p_amt, s=p_src, n=p_note))
             st.success("Pending income added!")
             st.cache_data.clear()
@@ -284,8 +305,8 @@ elif menu == "Pending":
         
             try:
                 run(
-                    "insert into income (date, amount_lkr, source, notes) "
-                    "values (now(), :a, :s, :n)",
+                    "insert into income (date, amount_lkr, source, notes, who) "
+                    "values (now(), :a, :s, :n, :w)",
                     dict(a=amt, s=src, n=note)
                 )
                 run("update pending_income set cleared=true where id=:i", {"i": pid})
@@ -436,8 +457,8 @@ else:   # menu == "Manage"
                 run("update budget set limit_lkr=:l where category=:c",
                     dict(l=row["limit_lkr"], c=row["category"]))
             else:
-                run(f"update {tbl} set amount_lkr=:a, notes=:n where id=:i",
-                    dict(a=row["amount_lkr"], n=row["notes"], i=row["id"]))
+                run(f"update {tbl} set amount_lkr=:a, notes=:n where id=:i and who=:w",
+                    dict(a=row["amount_lkr"], n=row["notes"], i=row["id"], w=profile))
         st.success("Rows updated!")
         st.cache_data.clear()
 
@@ -445,7 +466,7 @@ else:   # menu == "Manage"
     del_vals = st.multiselect(f"Select {del_key}(s) to delete", df[del_key])
 
     if st.button("🗑 Delete selected") and del_vals:
-        run(f"delete from {tbl} where {del_key} = any(:vals)", {"vals": del_vals})
+        run(f"delete from {tbl} where {del_key} = any(:vals) and who=:w", {"vals": del_vals, "w": profile})
         st.warning(f"Deleted {len(del_vals)} row(s).")
         st.cache_data.clear()
         st.experimental_rerun()
