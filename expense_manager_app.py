@@ -8,20 +8,6 @@ import base64
 from zoneinfo import ZoneInfo 
 from openai import OpenAI
 
-# ──────────────────  PROFILE PICKER  ──────────────────
-if "profile" not in st.session_state:
-    # first load → ask
-    colB, colG = st.columns(2)
-    with colB:
-        if st.button("💍  Bride"):
-            st.session_state.profile = "bride"
-            st.experimental_rerun()
-    with colG:
-        if st.button("🤵  Groom"):
-            st.session_state.profile = "groom"
-            st.experimental_rerun()
-    st.stop()   # wait until a button is chosen
-
 # ──────────────────  DB CONNECTION  ──────────────────
 engine = create_engine(
     st.secrets["DATABASE_URL"],
@@ -61,22 +47,13 @@ def nlp_extract(text: str) -> dict:
     import json
     return json.loads(resp.choices[0].message.content)
 
-# prefix to use everywhere below
-TBL = lambda name: f"{profile}_{name}"      #  e.g.  groom_income
-
-# ── helpers ─────────────────────────────────────────────────────────
-def run(sql, params=None, fetch=False):
-    """Wrapper that executes a fully-formed SQL statement."""
+def run(query, params=None, fetch=False):
     with engine.begin() as conn:
-        res = conn.execute(text(sql), params or {})
+        res = conn.execute(text(query), params or {})
         return res.fetchall() if fetch else None
 
-@st.cache_data(ttl=30)          # keep the decorator as before
-def load_table(name: str):
-    """Read *profile-specific* table into a DataFrame."""
-    return pd.read_sql(f"select * from {tbl(name)}", engine)
-
-
+def load_table(tbl):
+    return pd.read_sql(f"select * from {tbl}", engine)
 
 def datetime_input(
         label: str,
@@ -123,12 +100,6 @@ def fmt_rupees(n: float) -> str:
     if n >= 1_000:
         return f"LKR {n/1_000:.0f} k"
     return f"LKR {n:,.0f}"
-# -------------------------------------------------------
-def tbl(t: str) -> str:
-    """Return correct table for current profile."""
-    suf = "_bride" if st.session_state.profile == "bride" else ""
-    return f"{t}{suf}"
-# -------------------------------------------------------
 
 @st.cache_resource
 def get_engine():
@@ -141,12 +112,11 @@ engine = get_engine()   # use everywhere
 
 @st.cache_data(ttl=30)   # auto-refresh every 30 s
 def load_table(tbl):
-    return pd.read_sql(f"select * from {tbl(t)}", engine)
-
+    return pd.read_sql(f"select * from {tbl}", engine)
 
 # ──────────────────  PAGE CONFIG  ──────────────────
 st.set_page_config("Wedding Expense Tracker", layout="centered")
-add_scrolling_bg("assets/wedding_bg.jpg", veil_opacity=.15)
+add_scrolling_bg("assets/wedding_bg.jpg", veil_opacity=.05)
 
 st.title("💍 Wedding Expense & Income Tracker")
 
@@ -160,36 +130,23 @@ menu = st.sidebar.radio(
     ("Dashboard", "Quick Add", "Add Income", "Add Expense", "Budgets",
       "Manage", "Pending") 
 )
-# ──────────────────  Side Bar  ──────────────────
-st.sidebar.markdown("---")
-if st.sidebar.button("🔄 Switch to " +
-                     ("🤵 Groom" if st.session_state.profile=="bride"
-                                 else "💍 Bride")):
-    # toggle & rerun
-    st.session_state.profile = (
-        "groom" if st.session_state.profile=="bride" else "bride"
-    )
-    st.experimental_rerun()
-                                     
+
+
 # ──────────────────  ADD INCOME  ──────────────────
 if menu == "Add Income":
     with st.form(key="income_form"):
         st.subheader("➕ Add Income")
         ts     = datetime_input("Income", today)
         amount = st.number_input("Amount (LKR)", 0.0, step=1000.0, key="inc_amt")
-        src    = st.selectbox("Source", ("Salary", "Freelance", "Gift", "Other"),
-                              key="inc_src")
+        src    = st.selectbox("Source", ("Salary","Freelance","Gift","Other"), key="inc_src")
         notes  = st.text_input("Notes (optional)", key="inc_note")
-
-        if st.form_submit_button("Add Income") and amount > 0:
-            run(
-                "insert into " + tbl("income") +
-                " (date, amount_lkr, source, notes) "
-                "values (:d, :a, :s, :n)",
-                dict(d=ts, a=amount, s=src, n=notes)
-            )
+        submitted = st.form_submit_button("Add Income")
+        if submitted and amount > 0:
+            run("insert into income (date, amount_lkr, source, notes) "
+                "values (:d,:a,:s,:n)",
+                dict(d=ts, a=amount, s=src, n=notes))
             st.success("Income added!")
-            st.cache_data.clear()
+            st.cache_data.clear()        # invalidate cached tables
 
 
 # ──────────────────  ADD EXPENSE  ──────────────────
@@ -200,17 +157,13 @@ elif menu == "Add Expense":
         amt  = st.number_input("Amount (LKR)", 0.0, step=1000.0, key="exp_amt")
         cat  = st.text_input("Category (e.g., Groom Suit, Ring)", key="exp_cat")
         note = st.text_input("Notes (optional)", key="exp_note")
-
-        if st.form_submit_button("Add Expense") and amt > 0 and cat.strip():
-            run(
-                "insert into " + tbl("expense") +
-                " (date, amount_lkr, category, notes) "
-                "values (:d, :a, :c, :n)",
-                dict(d=ts, a=amt, c=cat.strip(), n=note)
-            )
+        submitted = st.form_submit_button("Add Expense")
+        if submitted and amt > 0 and cat.strip():
+            run("insert into expense (date, amount_lkr, category, notes) "
+                "values (:d,:a,:c,:n)",
+                dict(d=ts, a=amt, c=cat.strip(), n=note))
             st.success("Expense added!")
             st.cache_data.clear()
-
             
 # ──────────────────  ADD Quick Add  ──────────────────
 elif menu == "Quick Add":
@@ -266,19 +219,13 @@ elif menu == "Quick Add":
 
             # ── insert ─────────────────────────────────────
             if target == "income":
-                run(
-                    "insert into " + tbl("income") +
-                    " (date, amount_lkr, source, notes) "
-                    "values (:d, :a, :s, :n)",
-                    dict(d=ts, a=amt, s=src, n=note)
-                )
+                run("""insert into income (date, amount_lkr, source, notes)
+                       values (:d, :a, :s, :n)""",
+                    dict(d=ts, a=amt, s=src, n=note))
             else:
-                run(
-                    "insert into " + tbl("expense") +
-                    " (date, amount_lkr, category, notes) "
-                    "values (:d, :a, :c, :n)",
-                    dict(d=ts, a=amt, c=cat, n=note)
-                )
+                run("""insert into expense (date, amount_lkr, category, notes)
+                       values (:d, :a, :c, :n)""",
+                    dict(d=ts, a=amt, c=cat, n=note))
 
             st.success(f"Added {target}: LKR {amt:,.0f}")
 
@@ -292,20 +239,16 @@ elif menu == "Quick Add":
 # ──────────────────  BUDGETS  ──────────────────
 elif menu == "Budgets":
     st.subheader("📋 Category Budgets")
-    df_bud = load_table(tbl("budget"))
+    df_bud = load_table("budget")
     st.dataframe(df_bud if not df_bud.empty else
                  pd.DataFrame(columns=["category", "limit_lkr"]))
     st.markdown("---")
     b_cat  = st.text_input("Category")
     b_lim  = st.number_input("Limit (LKR)", 0.0, step=10000.0)
     if st.button("Save / Update Budget") and b_cat.strip():
-        run(
-            "insert into " + tbl("budget") +
-            " (category, limit_lkr) "
-            "values (:c, :l) "
-            "on conflict (category) do update set limit_lkr = :l",
-            dict(c=b_cat.strip(), l=b_lim)
-        )
+        run("insert into budget (category,limit_lkr) "
+            "values (:c,:l) on conflict (category) do update set limit_lkr=:l",
+            dict(c=b_cat.strip(), l=b_lim))
         st.success("Budget saved/updated!")
 
 # ──────────────────  PENDING  ──────────────────
@@ -315,62 +258,49 @@ elif menu == "Pending":
         colD, colA = st.columns(2)
         p_date  = colD.date_input("Expected date", value=today + timedelta(days=7))
         p_amt   = colA.number_input("Amount (LKR)", 0.0, step=1000.0)
-        p_src   = st.selectbox("Source", ("PayPal", "Gift", "Salary", "Other"))
+        p_src   = st.selectbox("Source", ("PayPal","Gift","Salary","Other"))
         p_note  = st.text_input("Notes (optional)")
-        if st.form_submit_button("Add pending") and p_amt > 0:
-            run(
-                "insert into " + tbl("pending_income") +
-                " (expected_on, amount_lkr, source, notes) "
-                "values (:d, :a, :s, :n)",
-                dict(d=p_date, a=p_amt, s=p_src, n=p_note)
-            )
+        submitted = st.form_submit_button("Add pending")
+        if submitted and p_amt > 0:
+            run("insert into pending_income (expected_on, amount_lkr, source, notes) "
+                "values (:d,:a,:s,:n)",
+                dict(d=p_date, a=p_amt, s=p_src, n=p_note))
             st.success("Pending income added!")
             st.cache_data.clear()
 
-    p_df = load_table(tbl("pending_income")).sort_values(
-        ["cleared", "expected_on"]
-    )
+    p_df = load_table("pending_income").sort_values(["cleared", "expected_on"])
     st.dataframe(p_df, hide_index=True, use_container_width=True)
 
     unclrd = p_df.loc[~p_df["cleared"], "id"]
     chosen = st.multiselect("Select IDs to move to Income", unclrd)
-
     if st.button("✅ Move to Income") and chosen:
         for pid in chosen:
             row = p_df.loc[p_df["id"] == pid].iloc[0]
-
+        
+            # ── clean every field ───────────────────────────
             amt  = 0.0 if pd.isna(row["amount_lkr"]) else float(row["amount_lkr"])
             src  = ""  if pd.isna(row["source"])     else str(row["source"])
             note = ""  if pd.isna(row["notes"])      else str(row["notes"])
-
+        
             try:
                 run(
-                    "insert into " + tbl("income") +
-                    " (date, amount_lkr, source, notes) "
+                    "insert into income (date, amount_lkr, source, notes) "
                     "values (now(), :a, :s, :n)",
                     dict(a=amt, s=src, n=note)
                 )
-                run("update " + tbl("pending_income") +
-                    " set cleared = true where id = :i",
-                    {"i": pid})
+                run("update pending_income set cleared=true where id=:i", {"i": pid})
             except Exception as e:
                 st.error(f"Couldn’t move ID {pid}: {e}")
-                continue
+                continue  # move on to next selection
 
         st.success(f"{len(chosen)} item(s) cleared into Income.")
-        st.cache_data.clear()
-
 
 
 # ──────────────────  DASHBOARD  ──────────────────
 elif menu == "Dashboard":
     st.subheader("📊 Dashboard")
 
-    df_inc, df_exp, df_bud = (
-    load_table("income"),
-    load_table("expense"),
-    load_table("budget")
-    )
+    df_inc, df_exp, df_bud = load_table("income"), load_table("expense"), load_table("budget")
     tot_inc, tot_exp = df_inc["amount_lkr"].sum(), df_exp["amount_lkr"].sum()
     bal = tot_inc - tot_exp
     
@@ -437,55 +367,58 @@ elif menu == "Dashboard":
             st.plotly_chart(fig3, use_container_width=True)
 
 # ----------  Expense-breakdown donut ----------
-    if not df_exp.empty:
-        # 1) aggregate spend per category
-        cat_tot = (
-            df_exp.groupby("category")["amount_lkr"]
-            .sum()
-            .sort_values(ascending=False)        # biggest first
+if not df_exp.empty:
+    # 1) aggregate spend per category
+    cat_tot = (
+        df_exp.groupby("category")["amount_lkr"]
+        .sum()
+        .sort_values(ascending=False)        # biggest first
+    )
+
+    # 2) OPTIONAL – merge very small slices into “Other”
+    tail_threshold = 0.05 * cat_tot.sum()    # <5 % of total
+    small_sum      = cat_tot[cat_tot < tail_threshold].sum()
+    cat_tot        = cat_tot[cat_tot >= tail_threshold]
+    if small_sum > 0:
+        cat_tot.loc["Other"] = small_sum
+
+    # 3) colour palette – warm for the top 3, cool blues for the rest
+    warm  = ["#ff7f0e", "#ff6361", "#ffa600"]          # orange family
+    blues = ["#4e79a7", "#59a14f", "#8cd17d",
+             "#76b7b2", "#9c755f", "#e15759"]          # fallback colours
+    colors = warm + blues
+    colors = colors[: len(cat_tot)]                    # trim to length
+
+    # 4) draw donut
+    fig_donut = go.Figure(
+        go.Pie(
+            labels      = cat_tot.index,
+            values      = cat_tot.values,
+            hole        = 0.45,
+            marker      = dict(colors=colors),
+            sort        = False,                       # keep our order
+            textinfo    = "label+percent",
+            texttemplate= "%{label}<br>%{percent:.1%}<br>(LKR %{value:,.0f})",
         )
-    
-        # 2) OPTIONAL – merge very small slices into “Other”
-        tail_threshold = 0.05 * cat_tot.sum()    # <5 % of total
-        small_sum      = cat_tot[cat_tot < tail_threshold].sum()
-        cat_tot        = cat_tot[cat_tot >= tail_threshold]
-        if small_sum > 0:
-            cat_tot.loc["Other"] = small_sum
-    
-        # 3) colour palette – warm for the top 3, cool blues for the rest
-        warm  = ["#ff7f0e", "#ff6361", "#ffa600"]          # orange family
-        blues = ["#4e79a7", "#59a14f", "#8cd17d",
-                 "#76b7b2", "#9c755f", "#e15759"]          # fallback colours
-        colors = warm + blues
-        colors = colors[: len(cat_tot)]                    # trim to length
-    
-        # 4) draw donut
-        fig_donut = go.Figure(
-            go.Pie(
-                labels      = cat_tot.index,
-                values      = cat_tot.values,
-                hole        = 0.45,
-                marker      = dict(colors=colors),
-                sort        = False,                       # keep our order
-                textinfo    = "label+percent",
-                texttemplate= "%{label}<br>%{percent:.1%}<br>(LKR %{value:,.0f})",
-            )
-        )
-        fig_donut.update_layout(title="Expense breakdown by category")
-        st.plotly_chart(fig_donut, use_container_width=True)
+    )
+    fig_donut.update_layout(title="Expense breakdown by category")
+    st.plotly_chart(fig_donut, use_container_width=True)
 
 
 # ──────────────────  MANAGE (edit / delete)  ──────────────────
-elif menu == "Manage":
+else:   # menu == "Manage"
     st.subheader("🛠 Manage Entries (edit / delete)")
 
-    # 1️⃣ choose which logical table – the TBL() helper adds bride_/groom_ prefix
-    tbl_choice = st.selectbox("Choose table", ("income", "expense", "budget"))
-    df         = load_table(tbl_choice)              # returns the prefixed table
-    df         = df.sort_values(df.columns[0], ascending=False).reset_index(drop=True)
+    tbl = st.selectbox("Choose table", ("income", "expense", "budget"))
 
-    # 2️⃣ decide which columns are editable
-    disabled_cols = ["category"] if tbl_choice == "budget" else ["id", "date", "source", "category"]
+    df  = load_table(tbl)
+    df  = df.sort_values(df.columns[0], ascending=False).reset_index(drop=True)
+
+    # column rules per table
+    if tbl == "budget":
+        disabled_cols = ["category"]          # keep category immutable
+    else:
+        disabled_cols = ["id", "date", "source", "category"]
 
     edited = st.data_editor(
         df,
@@ -495,31 +428,27 @@ elif menu == "Manage":
         key="editor"
     )
 
-    # 3️⃣ save edits
     if st.button("💾 Save changes"):
         diff = edited.compare(df)
         for idx in diff.index.unique(level=0):
             row = edited.loc[idx]
-            if tbl_choice == "budget":
-                run(f"update {TBL('budget')} set limit_lkr=:l where category=:c",
+            if tbl == "budget":
+                run("update budget set limit_lkr=:l where category=:c",
                     dict(l=row["limit_lkr"], c=row["category"]))
             else:
-                run(f"update {TBL(tbl_choice)} set amount_lkr=:a, notes=:n where id=:i",
+                run(f"update {tbl} set amount_lkr=:a, notes=:n where id=:i",
                     dict(a=row["amount_lkr"], n=row["notes"], i=row["id"]))
         st.success("Rows updated!")
         st.cache_data.clear()
 
-    # 4️⃣ delete rows
-    del_key  = "category" if tbl_choice == "budget" else "id"
+    del_key  = "category" if tbl == "budget" else "id"
     del_vals = st.multiselect(f"Select {del_key}(s) to delete", df[del_key])
 
     if st.button("🗑 Delete selected") and del_vals:
-        run(f"delete from {TBL(tbl_choice)} where {del_key} = any(:vals)",
-            {"vals": del_vals})
+        run(f"delete from {tbl} where {del_key} = any(:vals)", {"vals": del_vals})
         st.warning(f"Deleted {len(del_vals)} row(s).")
         st.cache_data.clear()
         st.experimental_rerun()
-
 
 
 # ──────────────────  MOBILE-FRIENDLY SCROLLBAR  ──────────────────
