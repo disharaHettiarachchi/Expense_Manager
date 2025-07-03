@@ -71,9 +71,11 @@ def run(sql, params=None, fetch=False):
         res = conn.execute(text(sql), params or {})
         return res.fetchall() if fetch else None
 
-def load_table(name):
-    """Read the whole {profile}_{name} table into a DataFrame."""
-    return pd.read_sql(f"select * from {TBL(name)}", engine)
+@st.cache_data(ttl=30)          # keep the decorator as before
+def load_table(name: str):
+    """Read *profile-specific* table into a DataFrame."""
+    return pd.read_sql(f"select * from {tbl(name)}", engine)
+
 
 
 def datetime_input(
