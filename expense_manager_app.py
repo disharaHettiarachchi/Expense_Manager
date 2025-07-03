@@ -14,32 +14,25 @@ if "profile" not in st.session_state:
 
     colG, colB = st.columns(2)
     if colG.button("🤵 Groom", use_container_width=True):
-        st.session_state.profile = "groom"; st.experimental_rerun()
+        st.session_state.profile = "groom"
     if colB.button("👰 Bride", use_container_width=True):
-        st.session_state.profile = "bride"; st.experimental_rerun()
+        st.session_state.profile = "bride"
 
-    #  ⬇️  paste the style block right here  ⬇️
-    st.markdown(
-        """
+    # enlarge the two buttons
+    st.markdown("""
         <style>
-        /* enlarge just these two buttons (they’re the only ones on screen) */
         div[data-testid="stButton"] > button {
-            width: 100%;
-            height: 72px;
-            font-size: 1.4rem;
-            font-weight: 600;
-            border-radius: 12px;
-            padding: 0.25rem 0;
+            width: 100%;  height: 72px;
+            font-size: 1.4rem;  font-weight: 600;
+            border-radius: 12px; padding: .25rem 0;
         }
         </style>
-        """,
-        unsafe_allow_html=True
-    )
+    """, unsafe_allow_html=True)
 
-    st.stop()   # wait until a choice is made
+    # nothing chosen yet → halt this run
+    st.stop()
 
-profile = st.session_state.profile   # 'groom' or 'bride'
-
+profile = st.session_state.profile          # "groom" or "bride"
 
 # ──────────────────  DB CONNECTION  ──────────────────
 engine = create_engine(
@@ -80,19 +73,20 @@ def nlp_extract(text: str) -> dict:
     import json
     return json.loads(resp.choices[0].message.content)
 
-### ――― DB helpers, now profile-aware ―――
-def run(query: str, params: dict | None = None, fetch: bool = False):
-    """Executes SQL and autoplugs :w => profile if the text contains `who`."""
-    params = params or {}
-    if ":w" in query or " who " in query.lower():
-        params["w"] = profile
-    with engine.begin() as conn:
-        rows = conn.execute(text(query), params)
-        return rows.fetchall() if fetch else None
+# prefix to use everywhere below
+TBL = lambda name: f"{profile}_{name}"      #  e.g.  groom_income
 
-def load_table(tbl: str) -> pd.DataFrame:
-    return pd.read_sql(f"select * from {tbl} where who = :w",
-                       engine, params=dict(w=profile))
+# ── helpers ─────────────────────────────────────────────────────────
+def run(sql, params=None, fetch=False):
+    """Wrapper that executes a fully-formed SQL statement."""
+    with engine.begin() as conn:
+        res = conn.execute(text(sql), params or {})
+        return res.fetchall() if fetch else None
+
+def load_table(name):
+    """Read the whole `{profile}_{name}` table into a DataFrame."""
+    return pd.read_sql(f"select * from {TBL(name)}", engine)
+
 
 def datetime_input(
         label: str,
@@ -185,8 +179,8 @@ if menu == "Add Income":
         notes  = st.text_input("Notes (optional)", key="inc_note")
         submitted = st.form_submit_button("Add Income")
         if submitted and amount > 0:
-            run("insert into income (date, amount_lkr, source, notes, who) "
-                "values (:d,:a,:s,:n,:w)",
+            run(f"insert into {TBL('income')} (date, amount_lkr, source, notes) "
+                "values (:d,:a,:s,:n)",
                 dict(d=ts, a=amount, s=src, n=notes, w=profile))
             st.success("Income added!")
             st.cache_data.clear()        # invalidate cached tables
@@ -202,8 +196,8 @@ elif menu == "Add Expense":
         note = st.text_input("Notes (optional)", key="exp_note")
         submitted = st.form_submit_button("Add Expense")
         if submitted and amt > 0 and cat.strip():
-            run("insert into expense (date, amount_lkr, category, notes, who) "
-                "values (:d,:a,:c,:n,:w)",
+            run(f"insert into {TBL('expense')} (date, amount_lkr, category, notes) "
+                "values (:d,:a,:c,:n)",
                 dict(d=ts, a=amt, c=cat.strip(), n=note, w=profile))
             st.success("Expense added!")
             st.cache_data.clear()
@@ -289,7 +283,7 @@ elif menu == "Budgets":
     b_cat  = st.text_input("Category")
     b_lim  = st.number_input("Limit (LKR)", 0.0, step=10000.0)
     if st.button("Save / Update Budget") and b_cat.strip():
-        run("insert into budget (category,limit_lkr,who) "
+        run(f"insert into {TBL('budget')} (category,limit_lkr,who) "
             "values (:c,:l,:w) on conflict (category,who) do update set limit_lkr=:l",
             dict(c=b_cat.strip(), l=b_lim))
         st.success("Budget saved/updated!")
@@ -449,19 +443,16 @@ elif menu == "Dashboard":
 
 
 # ──────────────────  MANAGE (edit / delete)  ──────────────────
-else:   # menu == "Manage"
+elif menu == "Manage":
     st.subheader("🛠 Manage Entries (edit / delete)")
 
-    tbl = st.selectbox("Choose table", ("income", "expense", "budget"))
+    # 1️⃣ choose which logical table – the TBL() helper adds bride_/groom_ prefix
+    tbl_choice = st.selectbox("Choose table", ("income", "expense", "budget"))
+    df         = load_table(tbl_choice)              # returns the prefixed table
+    df         = df.sort_values(df.columns[0], ascending=False).reset_index(drop=True)
 
-    df  = load_table(tbl)
-    df  = df.sort_values(df.columns[0], ascending=False).reset_index(drop=True)
-
-    # column rules per table
-    if tbl == "budget":
-        disabled_cols = ["category"]          # keep category immutable
-    else:
-        disabled_cols = ["id", "date", "source", "category"]
+    # 2️⃣ decide which columns are editable
+    disabled_cols = ["category"] if tbl_choice == "budget" else ["id", "date", "source", "category"]
 
     edited = st.data_editor(
         df,
@@ -471,27 +462,31 @@ else:   # menu == "Manage"
         key="editor"
     )
 
+    # 3️⃣ save edits
     if st.button("💾 Save changes"):
         diff = edited.compare(df)
         for idx in diff.index.unique(level=0):
             row = edited.loc[idx]
-            if tbl == "budget":
-                run("update budget set limit_lkr=:l where category=:c",
+            if tbl_choice == "budget":
+                run(f"update {TBL('budget')} set limit_lkr=:l where category=:c",
                     dict(l=row["limit_lkr"], c=row["category"]))
             else:
-                run(f"update {tbl} set amount_lkr=:a, notes=:n where id=:i and who=:w",
-                    dict(a=row["amount_lkr"], n=row["notes"], i=row["id"], w=profile))
+                run(f"update {TBL(tbl_choice)} set amount_lkr=:a, notes=:n where id=:i",
+                    dict(a=row["amount_lkr"], n=row["notes"], i=row["id"]))
         st.success("Rows updated!")
         st.cache_data.clear()
 
-    del_key  = "category" if tbl == "budget" else "id"
+    # 4️⃣ delete rows
+    del_key  = "category" if tbl_choice == "budget" else "id"
     del_vals = st.multiselect(f"Select {del_key}(s) to delete", df[del_key])
 
     if st.button("🗑 Delete selected") and del_vals:
-        run(f"delete from {tbl} where {del_key} = any(:vals) and who=:w", {"vals": del_vals, "w": profile})
+        run(f"delete from {TBL(tbl_choice)} where {del_key} = any(:vals)",
+            {"vals": del_vals})
         st.warning(f"Deleted {len(del_vals)} row(s).")
         st.cache_data.clear()
         st.experimental_rerun()
+
 
 
 # ──────────────────  MOBILE-FRIENDLY SCROLLBAR  ──────────────────
