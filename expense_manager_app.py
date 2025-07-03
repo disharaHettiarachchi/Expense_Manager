@@ -8,6 +8,20 @@ import base64
 from zoneinfo import ZoneInfo 
 from openai import OpenAI
 
+# ──────────────────  PROFILE PICKER  ──────────────────
+if "profile" not in st.session_state:
+    # first load → ask
+    colB, colG = st.columns(2)
+    with colB:
+        if st.button("💍  Bride"):
+            st.session_state.profile = "bride"
+            st.experimental_rerun()
+    with colG:
+        if st.button("🤵  Groom"):
+            st.session_state.profile = "groom"
+            st.experimental_rerun()
+    st.stop()   # wait until a button is chosen
+
 # ──────────────────  DB CONNECTION  ──────────────────
 engine = create_engine(
     st.secrets["DATABASE_URL"],
@@ -107,6 +121,12 @@ def fmt_rupees(n: float) -> str:
     if n >= 1_000:
         return f"LKR {n/1_000:.0f} k"
     return f"LKR {n:,.0f}"
+# -------------------------------------------------------
+def tbl(t: str) -> str:
+    """Return correct table for current profile."""
+    suf = "_bride" if st.session_state.profile == "bride" else ""
+    return f"{t}{suf}"
+# -------------------------------------------------------
 
 @st.cache_resource
 def get_engine():
@@ -119,7 +139,8 @@ engine = get_engine()   # use everywhere
 
 @st.cache_data(ttl=30)   # auto-refresh every 30 s
 def load_table(tbl):
-    return pd.read_sql(f"select * from {tbl}", engine)
+    return pd.read_sql(f"select * from {tbl(t)}", engine)
+
 
 # ──────────────────  PAGE CONFIG  ──────────────────
 st.set_page_config("Wedding Expense Tracker", layout="centered")
@@ -137,22 +158,36 @@ menu = st.sidebar.radio(
     ("Dashboard", "Quick Add", "Add Income", "Add Expense", "Budgets",
       "Manage", "Pending") 
 )
-
+# ──────────────────  Side Bar  ──────────────────
+st.sidebar.markdown("---")
+if st.sidebar.button("🔄 Switch to " +
+                     ("🤵 Groom" if st.session_state.profile=="bride"
+                                 else "💍 Bride")):
+    # toggle & rerun
+    st.session_state.profile = (
+        "groom" if st.session_state.profile=="bride" else "bride"
+    )
+    st.experimental_rerun()
+                                     
 # ──────────────────  ADD INCOME  ──────────────────
 if menu == "Add Income":
     with st.form(key="income_form"):
         st.subheader("➕ Add Income")
         ts     = datetime_input("Income", today)
         amount = st.number_input("Amount (LKR)", 0.0, step=1000.0, key="inc_amt")
-        src    = st.selectbox("Source", ("Salary","Freelance","Gift","Other"), key="inc_src")
+        src    = st.selectbox("Source", ("Salary", "Freelance", "Gift", "Other"),
+                              key="inc_src")
         notes  = st.text_input("Notes (optional)", key="inc_note")
-        submitted = st.form_submit_button("Add Income")
-        if submitted and amount > 0:
-            run(f"insert into {TBL('income')} (date, amount_lkr, source, notes) "
-                "values (:d,:a,:s,:n)",
-                dict(d=ts, a=amount, s=src, n=notes, w=profile))
+
+        if st.form_submit_button("Add Income") and amount > 0:
+            run(
+                "insert into " + tbl("income") +
+                " (date, amount_lkr, source, notes) "
+                "values (:d, :a, :s, :n)",
+                dict(d=ts, a=amount, s=src, n=notes)
+            )
             st.success("Income added!")
-            st.cache_data.clear()        # invalidate cached tables
+            st.cache_data.clear()
 
 
 # ──────────────────  ADD EXPENSE  ──────────────────
@@ -163,13 +198,17 @@ elif menu == "Add Expense":
         amt  = st.number_input("Amount (LKR)", 0.0, step=1000.0, key="exp_amt")
         cat  = st.text_input("Category (e.g., Groom Suit, Ring)", key="exp_cat")
         note = st.text_input("Notes (optional)", key="exp_note")
-        submitted = st.form_submit_button("Add Expense")
-        if submitted and amt > 0 and cat.strip():
-            run(f"insert into {TBL('expense')} (date, amount_lkr, category, notes) "
-                "values (:d,:a,:c,:n)",
-                dict(d=ts, a=amt, c=cat.strip(), n=note, w=profile))
+
+        if st.form_submit_button("Add Expense") and amt > 0 and cat.strip():
+            run(
+                "insert into " + tbl("expense") +
+                " (date, amount_lkr, category, notes) "
+                "values (:d, :a, :c, :n)",
+                dict(d=ts, a=amt, c=cat.strip(), n=note)
+            )
             st.success("Expense added!")
             st.cache_data.clear()
+
             
 # ──────────────────  ADD Quick Add  ──────────────────
 elif menu == "Quick Add":
@@ -225,13 +264,19 @@ elif menu == "Quick Add":
 
             # ── insert ─────────────────────────────────────
             if target == "income":
-                run("""insert into income (date, amount_lkr, source, notes, who)
-                       values (:d, :a, :s, :n, :w)""",
-                    dict(d=ts, a=amt, s=src, n=note, w=profile))
+                run(
+                    "insert into " + tbl("income") +
+                    " (date, amount_lkr, source, notes) "
+                    "values (:d, :a, :s, :n)",
+                    dict(d=ts, a=amt, s=src, n=note)
+                )
             else:
-                run("""insert into expense (date, amount_lkr, category, notes, who)
-                       values (:d, :a, :c, :n, :w)""",
-                    dict(d=ts, a=amt, c=cat, n=note, w=profile))
+                run(
+                    "insert into " + tbl("expense") +
+                    " (date, amount_lkr, category, notes) "
+                    "values (:d, :a, :c, :n)",
+                    dict(d=ts, a=amt, c=cat, n=note)
+                )
 
             st.success(f"Added {target}: LKR {amt:,.0f}")
 
@@ -245,16 +290,20 @@ elif menu == "Quick Add":
 # ──────────────────  BUDGETS  ──────────────────
 elif menu == "Budgets":
     st.subheader("📋 Category Budgets")
-    df_bud = load_table("budget")
+    df_bud = load_table(tbl("budget"))
     st.dataframe(df_bud if not df_bud.empty else
                  pd.DataFrame(columns=["category", "limit_lkr"]))
     st.markdown("---")
     b_cat  = st.text_input("Category")
     b_lim  = st.number_input("Limit (LKR)", 0.0, step=10000.0)
     if st.button("Save / Update Budget") and b_cat.strip():
-        run(f"insert into {TBL('budget')} (category,limit_lkr,who) "
-            "values (:c,:l,:w) on conflict (category,who) do update set limit_lkr=:l",
-            dict(c=b_cat.strip(), l=b_lim))
+        run(
+            "insert into " + tbl("budget") +
+            " (category, limit_lkr) "
+            "values (:c, :l) "
+            "on conflict (category) do update set limit_lkr = :l",
+            dict(c=b_cat.strip(), l=b_lim)
+        )
         st.success("Budget saved/updated!")
 
 # ──────────────────  PENDING  ──────────────────
@@ -264,42 +313,51 @@ elif menu == "Pending":
         colD, colA = st.columns(2)
         p_date  = colD.date_input("Expected date", value=today + timedelta(days=7))
         p_amt   = colA.number_input("Amount (LKR)", 0.0, step=1000.0)
-        p_src   = st.selectbox("Source", ("PayPal","Gift","Salary","Other"))
+        p_src   = st.selectbox("Source", ("PayPal", "Gift", "Salary", "Other"))
         p_note  = st.text_input("Notes (optional)")
-        submitted = st.form_submit_button("Add pending")
-        if submitted and p_amt > 0:
-            run("insert into pending_income (expected_on, amount_lkr, source, notes, who) "
-                "values (:d,:a,:s,:n,:w)",
-                dict(d=p_date, a=p_amt, s=p_src, n=p_note))
+        if st.form_submit_button("Add pending") and p_amt > 0:
+            run(
+                "insert into " + tbl("pending_income") +
+                " (expected_on, amount_lkr, source, notes) "
+                "values (:d, :a, :s, :n)",
+                dict(d=p_date, a=p_amt, s=p_src, n=p_note)
+            )
             st.success("Pending income added!")
             st.cache_data.clear()
 
-    p_df = load_table("pending_income").sort_values(["cleared", "expected_on"])
+    p_df = load_table(tbl("pending_income")).sort_values(
+        ["cleared", "expected_on"]
+    )
     st.dataframe(p_df, hide_index=True, use_container_width=True)
 
     unclrd = p_df.loc[~p_df["cleared"], "id"]
     chosen = st.multiselect("Select IDs to move to Income", unclrd)
+
     if st.button("✅ Move to Income") and chosen:
         for pid in chosen:
             row = p_df.loc[p_df["id"] == pid].iloc[0]
-        
-            # ── clean every field ───────────────────────────
+
             amt  = 0.0 if pd.isna(row["amount_lkr"]) else float(row["amount_lkr"])
             src  = ""  if pd.isna(row["source"])     else str(row["source"])
             note = ""  if pd.isna(row["notes"])      else str(row["notes"])
-        
+
             try:
                 run(
-                    "insert into income (date, amount_lkr, source, notes, who) "
-                    "values (now(), :a, :s, :n, :w)",
+                    "insert into " + tbl("income") +
+                    " (date, amount_lkr, source, notes) "
+                    "values (now(), :a, :s, :n)",
                     dict(a=amt, s=src, n=note)
                 )
-                run("update pending_income set cleared=true where id=:i", {"i": pid})
+                run("update " + tbl("pending_income") +
+                    " set cleared = true where id = :i",
+                    {"i": pid})
             except Exception as e:
                 st.error(f"Couldn’t move ID {pid}: {e}")
-                continue  # move on to next selection
+                continue
 
         st.success(f"{len(chosen)} item(s) cleared into Income.")
+        st.cache_data.clear()
+
 
 
 # ──────────────────  DASHBOARD  ──────────────────
