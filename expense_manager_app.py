@@ -366,7 +366,11 @@ elif menu == "Pending":
 elif menu == "Dashboard":
     st.subheader("📊 Dashboard")
 
-    df_inc, df_exp, df_bud = load_table("income"), load_table("expense"), load_table("budget")
+    df_inc, df_exp, df_bud = (
+    load_table("income"),
+    load_table("expense"),
+    load_table("budget")
+    )
     tot_inc, tot_exp = df_inc["amount_lkr"].sum(), df_exp["amount_lkr"].sum()
     bal = tot_inc - tot_exp
     
