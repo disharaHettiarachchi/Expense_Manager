@@ -11,13 +11,35 @@ from openai import OpenAI
 # ─────────────  BRIDE ↔ GROOM profile picker  ─────────────
 if "profile" not in st.session_state:
     st.title("Select Bride Or Groom")
+
     colG, colB = st.columns(2)
     if colG.button("🤵 Groom", use_container_width=True):
         st.session_state.profile = "groom"; st.experimental_rerun()
     if colB.button("👰 Bride", use_container_width=True):
         st.session_state.profile = "bride"; st.experimental_rerun()
-    st.stop()                            # wait until a choice is made
-profile = st.session_state.profile       # 'groom' or 'bride'
+
+    #  ⬇️  paste the style block right here  ⬇️
+    st.markdown(
+        """
+        <style>
+        /* enlarge just these two buttons (they’re the only ones on screen) */
+        div[data-testid="stButton"] > button {
+            width: 100%;
+            height: 72px;
+            font-size: 1.4rem;
+            font-weight: 600;
+            border-radius: 12px;
+            padding: 0.25rem 0;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
+    st.stop()   # wait until a choice is made
+
+profile = st.session_state.profile   # 'groom' or 'bride'
+
 
 # ──────────────────  DB CONNECTION  ──────────────────
 engine = create_engine(
