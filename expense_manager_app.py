@@ -8,18 +8,6 @@ import base64
 from zoneinfo import ZoneInfo 
 from openai import OpenAI
 
-# ─────────────  BRIDE ↔ GROOM profile picker  ─────────────
-if "profile" not in st.session_state:
-    st.title("Who’s bookkeeping?")
-    colG, colB = st.columns(2)
-    if colG.button("🤵 Groom", use_container_width=True):
-        st.session_state.profile = "groom"; st.experimental_rerun()
-    if colB.button("👰 Bride", use_container_width=True):
-        st.session_state.profile = "bride"; st.experimental_rerun()
-    st.stop()                            # wait until a choice is made
-profile = st.session_state.profile       # 'groom' or 'bride'
-
-
 # ──────────────────  DB CONNECTION  ──────────────────
 engine = create_engine(
     st.secrets["DATABASE_URL"],
@@ -149,11 +137,6 @@ menu = st.sidebar.radio(
     ("Dashboard", "Quick Add", "Add Income", "Add Expense", "Budgets",
       "Manage", "Pending") 
 )
-st.sidebar.markdown(f"**Profile:** {profile}")
-if st.sidebar.button("Switch profile"):
-    del st.session_state.profile
-    st.experimental_rerun()
-
 
 # ──────────────────  ADD INCOME  ──────────────────
 if menu == "Add Income":
