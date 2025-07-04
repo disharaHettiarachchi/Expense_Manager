@@ -246,10 +246,17 @@ elif menu == "Quick Add":
                      {"d": ts, "a": amt, "c": cat, "n": note})
             where_to = "expense"
     
-        st.success(f"Saved to **{where_to}**: LKR {amt:,.0f}")
-        st.cache_data.clear()
-        st.session_state.qa_parsed = None
-        st.experimental_rerun()
+            st.success(f"Added {target}: LKR {amt:,.0f}")
+
+            # housekeeping
+            st.cache_data.clear()
+            st.session_state.qa_parsed = None   # clear preview
+
+            # 🔁 hard refresh so widgets reset
+            try:
+                st.rerun()
+            except AttributeError:
+                st.experimental_rerun()
 
 
 
