@@ -7,6 +7,8 @@ from pathlib import Path
 import base64
 from zoneinfo import ZoneInfo 
 from openai import OpenAI
+from sqlalchemy.exc import IntegrityError
+from decimal import Decimal, InvalidOperation
 
 # ──────────────────  DB CONNECTION  ──────────────────
 engine = create_engine(
@@ -132,6 +134,13 @@ menu = st.sidebar.radio(
 )
 
 
+def safe_run(query: str, params: dict | None = None, fetch=False):
+    try:
+        return run(query, params, fetch)
+    except IntegrityError as e:
+        st.error(f"DB error: {e.orig}")          # shows the PG detail
+        raise                                   # keep the stack-trace
+
 # ──────────────────  ADD INCOME  ──────────────────
 if menu == "Add Income":
     with st.form(key="income_form"):
@@ -193,47 +202,55 @@ elif menu == "Quick Add":
 
         target = st.radio("Save as", ("expense", "income"), horizontal=True)
 
-        if st.button("💾 Save to database"):
+    # ---------- Save button ----------
+    if st.button("💾 Save to database"):
+    
+        # ---------- basic sanitation ----------
+        amount_txt = str(data.get("amount_lkr") or "")
+        amount_txt = amount_txt.lower().replace("k", "000").replace(",", "")
+        try:
+            amt = float(Decimal(amount_txt))
+        except InvalidOperation:
+            st.error("⚠️ Couldn’t read a number from that amount.")
+            st.stop()
+        if amt <= 0:
+            st.error("⚠️ Amount must be greater than zero.")
+            st.stop()
+    
+        # ---------- timestamp ----------
+        dt_txt = data.get("date") or date.today().isoformat()
+        tm_txt = data.get("time") or "12:00"
+        ts     = datetime.fromisoformat(f"{dt_txt} {tm_txt}")
+    
+        # ---------- category / source ----------
+        cat = (data.get("category") or "Other").title()
+        src = (data.get("source")   or "Other").title()
+        note= data.get("notes") or raw
+    
+        # make sure category is in budget (FK safety)
+        safe_run("""
+            insert into budget (category, limit_lkr)
+            values (:c, 0)
+            on conflict do nothing
+        """, {"c": cat})
+    
+        # ---------- insert ----------
+        if st.radio("Save as", ("Expense", "Income"), horizontal=True) == "Income":
+            safe_run("""insert into income (date, amount_lkr, source, notes)
+                        values (:d, :a, :s, :n)""",
+                     {"d": ts, "a": amt, "s": src, "n": note})
+            where_to = "income"
+        else:
+            safe_run("""insert into expense (date, amount_lkr, category, notes)
+                        values (:d, :a, :c, :n)""",
+                     {"d": ts, "a": amt, "c": cat, "n": note})
+            where_to = "expense"
+    
+        st.success(f"Saved to **{where_to}**: LKR {amt:,.0f}")
+        st.cache_data.clear()
+        st.session_state.qa_parsed = None
+        st.experimental_rerun()
 
-            # ── clean / validate ───────────────────────────
-            #  ⬩ date fallback: if year < current → today
-            dt_txt = data.get("date") or ""
-            if len(dt_txt) == 10:        # YYYY-MM-DD
-                yr = int(dt_txt[:4])
-                if yr < date.today().year:
-                    dt_txt = ""
-            if not dt_txt:
-                dt_txt = date.today().isoformat()
-
-            #  ⬩ time fallback
-            tm_txt = data.get("time") or "12:00"
-
-            ts = datetime.fromisoformat(f"{dt_txt} {tm_txt}")
-
-            amt = float(data.get("amount_lkr") or 0)
-            cat = (data.get("category") or "Other").title()
-            src = (data.get("source")   or "Other").title()
-
-            #  ⬩ note = model note or full raw text
-            note = data.get("notes") or raw
-
-            # ── insert ─────────────────────────────────────
-            if target == "income":
-                run("""insert into income (date, amount_lkr, source, notes)
-                       values (:d, :a, :s, :n)""",
-                    dict(d=ts, a=amt, s=src, n=note))
-            else:
-                run("""insert into expense (date, amount_lkr, category, notes)
-                       values (:d, :a, :c, :n)""",
-                    dict(d=ts, a=amt, c=cat, n=note))
-
-            st.success(f"Added {target}: LKR {amt:,.0f}")
-
-            # housekeeping
-            st.cache_data.clear()
-            st.session_state.qa_parsed = None   # ← DO clear this
-            # DO NOT reset qa_raw (widget key) → avoids StreamlitAPIException
-            st.experimental_rerun()
 
 
 # ──────────────────  BUDGETS  ──────────────────
