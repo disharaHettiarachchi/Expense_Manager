@@ -367,13 +367,13 @@ elif menu == "Dashboard":
             st.plotly_chart(fig3, use_container_width=True)
 
 # ----------  Expense-breakdown donut ----------
-if not df_exp.empty:
-    # 1) aggregate spend per category
-    cat_tot = (
-        df_exp.groupby("category")["amount_lkr"]
-        .sum()
-        .sort_values(ascending=False)        # biggest first
-    )
+    if not df_exp.empty:
+        # 1) aggregate spend per category
+        cat_tot = (
+            df_exp.groupby("category")["amount_lkr"]
+            .sum()
+            .sort_values(ascending=False)        # biggest first
+        )
 
     # 2) OPTIONAL – merge very small slices into “Other”
     tail_threshold = 0.05 * cat_tot.sum()    # <5 % of total
