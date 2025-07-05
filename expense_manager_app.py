@@ -398,22 +398,26 @@ elif menu == "Dashboard":
                           .sort_values(ascending=False))
 
         # 2) merge very small slices into “Other”
-        tiny_cutoff   = 0.05 * cat_tot.sum()          # <5 %
-        tiny_total    = cat_tot[cat_tot < tiny_cutoff].sum()
-        cat_tot       = cat_tot[cat_tot >= tiny_cutoff]
+        tiny_cutoff = 0.05 * float(cat_tot.sum())      # <5 %
+        tiny_total  = cat_tot[cat_tot < tiny_cutoff].sum()
+        cat_tot     = cat_tot[cat_tot >= tiny_cutoff]
         if tiny_total:
             cat_tot.loc["Other"] = tiny_total
 
         # 3) colour palette
-        warm  = ["#ff7f0e", "#ff6361", "#ffa600"]            # top 3
+        warm  = ["#ff7f0e", "#ff6361", "#ffa600"]        # top 3
         blues = ["#4e79a7", "#59a14f", "#8cd17d",
                  "#76b7b2", "#9c755f", "#e15759"]
         colors = (warm + blues)[: len(cat_tot)]
 
-        # 4) build figure  (note: marker=dict(colors=…))
+        # 4) convert → float for Plotly
+        labels = cat_tot.index.tolist()
+        values = cat_tot.astype(float).tolist()
+
+        # 5) build the figure
         fig_donut = go.Figure(go.Pie(
-            labels        = cat_tot.index,
-            values        = cat_tot.values,
+            labels        = labels,
+            values        = values,
             hole          = 0.45,
             marker        = dict(colors=colors),
             sort          = False,
@@ -422,6 +426,7 @@ elif menu == "Dashboard":
         ))
         fig_donut.update_layout(title="Expense breakdown by category")
         st.plotly_chart(fig_donut, use_container_width=True)
+
 
 # ──────────────────  MANAGE (edit / delete)  ──────────────────
 else:   # menu == "Manage"
