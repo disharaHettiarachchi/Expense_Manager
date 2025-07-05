@@ -390,44 +390,38 @@ elif menu == "Dashboard":
                                xaxis_title="Day", yaxis_title="LKR")
             st.plotly_chart(fig3, use_container_width=True)
             
-    # ---------- Expense-breakdown donut ----------
+# ----------  Expense-breakdown donut (inside Dashboard!) ----------
     if not df_exp.empty:
-        cat_tot = (
-            df_exp.groupby("category")["amount_lkr"]
-                  .sum()
-                  .sort_values(ascending=False)
-        )
-    
-        # merge tiny slices into “Other”
-        tail_threshold = 0.05 * cat_tot.sum()
-        small_sum      = cat_tot[cat_tot < tail_threshold].sum()
-        cat_tot        = cat_tot[cat_tot >= tail_threshold]
-        if small_sum:  # only if we actually merged
-            cat_tot.loc["Other"] = small_sum
-    
-        # palette
-        warm  = ["#ff7f0e", "#ff6361", "#ffa600"]
+        # 1) spend per category
+        cat_tot = (df_exp.groupby("category")["amount_lkr"]
+                          .sum()
+                          .sort_values(ascending=False))
+
+        # 2) merge very small slices into “Other”
+        tiny_cutoff   = 0.05 * cat_tot.sum()          # <5 %
+        tiny_total    = cat_tot[cat_tot < tiny_cutoff].sum()
+        cat_tot       = cat_tot[cat_tot >= tiny_cutoff]
+        if tiny_total:
+            cat_tot.loc["Other"] = tiny_total
+
+        # 3) colour palette
+        warm  = ["#ff7f0e", "#ff6361", "#ffa600"]            # top 3
         blues = ["#4e79a7", "#59a14f", "#8cd17d",
                  "#76b7b2", "#9c755f", "#e15759"]
         colors = (warm + blues)[: len(cat_tot)]
-    
-        # NOTE the back-slash before the comma ↓↓↓↓
-        txt_tpl = "%{label}<br>%{percent:.1%}<br>(LKR %{value:\\,.0f})"
-    
+
+        # 4) build figure  (note: marker=dict(colors=…))
         fig_donut = go.Figure(go.Pie(
-            labels       = cat_tot.index,
-            values       = cat_tot.values,
-            hole         = 0.45,
-            marker_color = colors,
-            sort         = False,
-            textinfo     = "label+percent",
-            texttemplate = txt_tpl,          # ← safe now
+            labels        = cat_tot.index,
+            values        = cat_tot.values,
+            hole          = 0.45,
+            marker        = dict(colors=colors),
+            sort          = False,
+            textinfo      = "label+percent",
+            hovertemplate = "%{label}<br>LKR %{value:,.0f}<extra></extra>",
         ))
         fig_donut.update_layout(title="Expense breakdown by category")
         st.plotly_chart(fig_donut, use_container_width=True)
-
-
-
 
 # ──────────────────  MANAGE (edit / delete)  ──────────────────
 else:   # menu == "Manage"
